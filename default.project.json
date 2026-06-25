@@ -13,8 +13,76 @@
       "$path": "src/ReplicatedStorage"
     },
 
+    "Lighting": {
+      "$className": "Lighting",
+      "$properties": {
+        "Ambient": [0.27450982, 0.27450982, 0.27450982],
+        "Brightness": 2.5,
+        "ColorShift_Bottom": [0.11764706, 0.13725491, 0.21568628],
+        "ColorShift_Top": [0.6666667, 0.74509805, 0.8627451],
+        "EnvironmentDiffuseScale": 0.800000011920929,
+        "EnvironmentSpecularScale": 0.5,
+        "ExposureCompensation": -0.30000001192092896,
+        "FogColor": [0.7529412, 0.7529412, 0.7529412],
+        "GeographicLatitude": 40,
+        "GlobalShadows": true,
+        "OutdoorAmbient": [0.27450982, 0.27450982, 0.27450982]
+      },
+      "$path": "src/Lighting"
+    },
+
+    "MaterialService": {
+      "$className": "MaterialService",
+      "$ignoreUnknownInstances": true,
+      "$path": "src/MaterialService"
+    },
+
+    "NetworkClient": {
+      "$className": "NetworkClient",
+      "$ignoreUnknownInstances": true,
+      "$path": "src/NetworkClient"
+    },
+
+    "Players": {
+      "$className": "Players",
+      "$properties": {
+        "RespawnTime": 3
+      },
+      "$ignoreUnknownInstances": true,
+      "$path": "src/Players"
+    },
+
+    "SoundService": {
+      "$className": "SoundService",
+      "$properties": {
+        "RespectFilteringEnabled": true
+      },
+      "$ignoreUnknownInstances": true,
+      "$path": "src/SoundService"
+    },
+
+    "StarterPack": {
+      "$className": "StarterPack",
+      "$ignoreUnknownInstances": true,
+      "$path": "src/StarterPack"
+    },
+
+    "Teams": {
+      "$className": "Teams",
+      "$ignoreUnknownInstances": true,
+      "$path": "src/Teams"
+    },
+
+    "TextChatService": {
+      "$className": "TextChatService",
+      "$path": "src/TextChatService"
+    },
+
     "StarterPlayer": {
       "$className": "StarterPlayer",
+      "$properties": {
+        "CharacterUseJumpPower": false
+      },
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
         "$path": "src/StarterPlayer/StarterPlayerScripts"

@@ -1,7 +1,9 @@
 # Rojo build output
 *.rbxl
+!DemonBlade2.rbxl
 *.rbxlx
 *.rbxm
+!src/**/*.rbxm
 *.rbxmx
 
 # Rojo sourcemap (auto-generated, large)
