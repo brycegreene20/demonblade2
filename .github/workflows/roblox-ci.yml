@@ -160,10 +160,14 @@ jobs:
           if (-not $env:STAGING_PLACE_ID) { throw "Missing STAGING_PLACE_ID secret." }
           if (-not $env:STAGING_UNIVERSE_ID) { throw "Missing STAGING_UNIVERSE_ID secret." }
 
+          $placeId     = $env:STAGING_PLACE_ID.Trim()
+          $universeId  = $env:STAGING_UNIVERSE_ID.Trim()
+          $apiKey      = $env:ROBLOX_API_KEY.Trim()
+
           & "$env:ROJO" upload default.project.json `
-            --asset_id "$env:STAGING_PLACE_ID" `
-            --universe_id "$env:STAGING_UNIVERSE_ID" `
-            --api_key "$env:ROBLOX_API_KEY"
+            --asset_id $placeId `
+            --universe_id $universeId `
+            --api_key $apiKey
 
   deploy-production:
     name: Deploy Demon Blade 2 Publish
@@ -203,7 +207,11 @@ jobs:
           if (-not $env:PRODUCTION_PLACE_ID) { throw "Missing PRODUCTION_PLACE_ID secret." }
           if (-not $env:PRODUCTION_UNIVERSE_ID) { throw "Missing PRODUCTION_UNIVERSE_ID secret." }
 
+          $placeId     = $env:PRODUCTION_PLACE_ID.Trim()
+          $universeId  = $env:PRODUCTION_UNIVERSE_ID.Trim()
+          $apiKey      = $env:ROBLOX_API_KEY.Trim()
+
           & "$env:ROJO" upload default.project.json `
-            --asset_id "$env:PRODUCTION_PLACE_ID" `
-            --universe_id "$env:PRODUCTION_UNIVERSE_ID" `
-            --api_key "$env:ROBLOX_API_KEY"
+            --asset_id $placeId `
+            --universe_id $universeId `
+            --api_key $apiKey
