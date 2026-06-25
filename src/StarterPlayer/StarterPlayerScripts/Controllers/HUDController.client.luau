@@ -4,8 +4,18 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local SoundService = game:GetService("SoundService")
 
+local DEBUG_HUD = true
+local function hudLog(message)
+	if DEBUG_HUD then
+		print("[HUDController] " .. message)
+	end
+end
+
+hudLog("Booting")
+
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+hudLog("PlayerGui found: " .. PlayerGui:GetFullName())
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local HPChanged = Remotes:WaitForChild("HPChanged")
 local StaminaChanged = Remotes:WaitForChild("StaminaChanged")
@@ -15,24 +25,48 @@ local StatsChanged = Remotes:WaitForChild("StatsChanged")
 local LevelUpRemote = Remotes:WaitForChild("LevelUp")
 local StatPointsChanged = Remotes:WaitForChild("StatPointsChanged")
 local AllocateStatRemote = Remotes:WaitForChild("AllocateStat")
-local ChooseFactionRemote = Remotes:WaitForChild("ChooseFaction")
 local FactionChosenRemote = Remotes:WaitForChild("FactionChosen")
 local ShowFactionSelectRemote = Remotes:WaitForChild("ShowFactionSelect")
 local RespecStatsRemote = Remotes:WaitForChild("RespecStats")
 local RespecResultRemote = Remotes:WaitForChild("RespecResult")
-local ResetFactionRemote = Remotes:WaitForChild("ResetFaction")
+local _ResetFactionRemote = Remotes:FindFirstChild("ResetFaction")
+hudLog("Core remotes ready")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local SkillSystemModule = require(Modules:WaitForChild("SkillSystemModule"))
+hudLog("SkillSystemModule loaded")
 
-local BAR_WIDTH = 260
-local BAR_HEIGHT = 22
-local STAMINA_BAR_HEIGHT = 14
-local XP_BAR_HEIGHT = 10
-local MASTERY_BAR_HEIGHT = 8
-local CORNER_RADIUS = 6
-local PADDING = 12
-local BOTTOM_OFFSET = 40
+local EquipTitleRemote = Remotes:FindFirstChild("EquipTitle")
+local TitleRebirthRemote = Remotes:FindFirstChild("TitleRebirth")
+local StyleChangedRemote = Remotes:FindFirstChild("StyleChanged")
+local InventoryChangedRemote = Remotes:FindFirstChild("InventoryChanged")
+local EquipScrollRemote = Remotes:FindFirstChild("EquipScroll")
+
+local okItemsModule, ItemsModule = pcall(require, Modules:WaitForChild("ItemsModule", 5))
+if not okItemsModule then
+	warn("[HUDController] ItemsModule unavailable; inventory UI will stay empty")
+	ItemsModule = nil
+end
+
+local okTitleModule, TitleModule = pcall(require, Modules:WaitForChild("TitleModule", 5))
+if not okTitleModule then
+	warn("[HUDController] TitleModule unavailable; title UI will stay closed")
+	TitleModule = nil
+end
+
+local cachedInventory = {}
+local cachedEquippedStyle = ""
+local cachedTitles = {}
+local cachedEquippedTitle = ""
+
+local BAR_WIDTH = 200
+local BAR_HEIGHT = 16
+local STAMINA_BAR_HEIGHT = 10
+local XP_BAR_HEIGHT = 8
+local MASTERY_BAR_HEIGHT = 6
+local CORNER_RADIUS = 5
+local PADDING = 8
+local BOTTOM_OFFSET = 30
 
 local HP_COLOR = Color3.fromRGB(220, 50, 50)
 local HP_BG = Color3.fromRGB(60, 15, 15)
@@ -58,18 +92,33 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "HUD"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
-screenGui.DisplayOrder = 5
+screenGui.DisplayOrder = 30
 screenGui.Parent = PlayerGui
+hudLog("ScreenGui mounted")
 
 local container = Instance.new("Frame")
 container.Name = "BarContainer"
-container.Size = UDim2.fromOffset(BAR_WIDTH + PADDING * 2, BAR_HEIGHT + STAMINA_BAR_HEIGHT + MASTERY_BAR_HEIGHT + XP_BAR_HEIGHT + PADDING * 3 + 68)
+container.Size = UDim2.fromOffset(BAR_WIDTH + PADDING * 2, BAR_HEIGHT + STAMINA_BAR_HEIGHT + MASTERY_BAR_HEIGHT + XP_BAR_HEIGHT + PADDING * 3 + 57)
 container.Position = UDim2.new(0, 20, 1, -BOTTOM_OFFSET)
 container.AnchorPoint = Vector2.new(0, 1)
 container.BackgroundColor3 = Color3.fromRGB(10, 12, 16)
 container.BackgroundTransparency = 0.3
 container.BorderSizePixel = 0
+container.Visible = true
 container.Parent = screenGui
+hudLog("BarContainer mounted")
+
+screenGui.AncestryChanged:Connect(function(_, parent)
+	hudLog("ScreenGui ancestry changed; parent=" .. (parent and parent:GetFullName() or "nil"))
+end)
+
+container.AncestryChanged:Connect(function(_, parent)
+	hudLog("BarContainer ancestry changed; parent=" .. (parent and parent:GetFullName() or "nil"))
+end)
+
+container:GetPropertyChangedSignal("Visible"):Connect(function()
+	hudLog("BarContainer visibility changed: " .. tostring(container.Visible))
+end)
 
 local containerCorner = Instance.new("UICorner")
 containerCorner.CornerRadius = UDim.new(0, 10)
@@ -169,9 +218,9 @@ hpLabel.Text = "HP"
 hpLabel.Parent = container
 
 local hpBar = createBar("HPBar", container, PADDING + 14, BAR_HEIGHT, HP_COLOR, HP_BG, true)
-local staminaBar = createBar("StaminaBar", container, PADDING + 14 + BAR_HEIGHT + 8, STAMINA_BAR_HEIGHT, STAMINA_COLOR, STAMINA_BG, false)
+local staminaBar = createBar("StaminaBar", container, PADDING + 14 + BAR_HEIGHT + 4, STAMINA_BAR_HEIGHT, STAMINA_COLOR, STAMINA_BG, false)
 
-local masterySectionY = PADDING + 14 + BAR_HEIGHT + 8 + STAMINA_BAR_HEIGHT + 10
+local masterySectionY = PADDING + 14 + BAR_HEIGHT + 4 + STAMINA_BAR_HEIGHT + 5
 
 local MASTERY_BREATH_COLOR1 = Color3.fromRGB(60, 180, 220)
 local MASTERY_BREATH_COLOR2 = Color3.fromRGB(40, 120, 180)
@@ -251,7 +300,7 @@ masteryFillGradient.Color = ColorSequence.new({
 masteryFillGradient.Rotation = 90
 masteryFillGradient.Parent = masteryFill
 
-local xpSectionY = masterySectionY + MASTERY_BAR_HEIGHT + 14 + 6
+local xpSectionY = masterySectionY + MASTERY_BAR_HEIGHT + 14 + 4
 
 local levelBadge = Instance.new("Frame")
 levelBadge.Name = "LevelBadge"
@@ -319,6 +368,8 @@ local TWEEN_SLOW = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirectio
 local TWEEN_STAMINA = TweenInfo.new(0.1, Enum.EasingStyle.Linear)
 
 local function updateHP(current, max)
+	current = tonumber(current) or 0
+	max = math.max(tonumber(max) or 1, 1)
 	local ratio = math.clamp(current / max, 0, 1)
 	TweenService:Create(hpBar.Fill, TWEEN_FAST, {Size = UDim2.fromScale(ratio, 1)}):Play()
 
@@ -342,6 +393,8 @@ local function updateHP(current, max)
 end
 
 local function updateStamina(current, max)
+	current = tonumber(current) or 0
+	max = math.max(tonumber(max) or 1, 1)
 	local ratio = math.clamp(current / max, 0, 1)
 	TweenService:Create(staminaBar.Fill, TWEEN_STAMINA, {Size = UDim2.fromScale(ratio, 1)}):Play()
 
@@ -355,6 +408,9 @@ end
 local TWEEN_XP = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local function updateStats(level, xp, xpNeeded, _totalXP)
+	level = tonumber(level) or 1
+	xp = tonumber(xp) or 0
+	xpNeeded = tonumber(xpNeeded) or 100
 	levelText.Text = "Lv " .. level
 	local ratio = math.clamp(xp / math.max(xpNeeded, 1), 0, 1)
 	TweenService:Create(xpFill, TWEEN_XP, {Size = UDim2.fromScale(ratio, 1)}):Play()
@@ -371,9 +427,65 @@ end
 
 local currentLevel = 1
 
+local function syncFromCharacter(reason)
+	local character = LocalPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		hudLog("Character sync skipped (" .. reason .. "): humanoid not ready")
+		return
+	end
+
+	hudLog("Character sync (" .. reason .. "): hp=" .. math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth))
+	updateHP(humanoid.Health, humanoid.MaxHealth)
+end
+
+local function reportHudState(reason)
+	local parentName = screenGui.Parent and screenGui.Parent:GetFullName() or "nil"
+	local absPos = container.AbsolutePosition
+	local absSize = container.AbsoluteSize
+	hudLog(
+		reason
+			.. " state: guiParent=" .. parentName
+			.. ", enabled=" .. tostring(screenGui.Enabled)
+			.. ", displayOrder=" .. tostring(screenGui.DisplayOrder)
+			.. ", containerParent=" .. (container.Parent and container.Parent.Name or "nil")
+			.. ", visible=" .. tostring(container.Visible)
+			.. ", absPos=" .. tostring(math.floor(absPos.X)) .. "," .. tostring(math.floor(absPos.Y))
+			.. ", absSize=" .. tostring(math.floor(absSize.X)) .. "x" .. tostring(math.floor(absSize.Y))
+	)
+end
+
+local function forceHudVisible(reason)
+	if screenGui.Parent ~= PlayerGui then
+		screenGui.Parent = PlayerGui
+	end
+	screenGui.Enabled = true
+	screenGui.DisplayOrder = 30
+	container.Parent = screenGui
+	container.Visible = true
+	container.Position = UDim2.new(0, 20, 1, -BOTTOM_OFFSET)
+	container.AnchorPoint = Vector2.new(0, 1)
+	reportHudState(reason)
+end
+
+updateHP(150, 150)
+updateStamina(100, 100)
+updateStats(1, 0, 100)
+forceHudVisible("initial")
+
+task.defer(function()
+	syncFromCharacter("deferred")
+	forceHudVisible("deferred")
+end)
+
+task.delay(3, function()
+	syncFromCharacter("3s watchdog")
+	forceHudVisible("3s watchdog")
+end)
+
 -- ==================== STAT ALLOCATION PANEL ====================
 local cachedStatPoints = 0
-local cachedStatData = {}
+local cachedStatData: {[string]: any} = {}
 local cachedFaction = ""
 local statPanelOpen = false
 
@@ -765,9 +877,12 @@ respecBtn.MouseButton1Click:Connect(function()
 	respecConfirmFrame.Visible = true
 end)
 
--- ==================== CHANGE FACTION BUTTON ====================
+-- ==================== TITLES BUTTON ====================
+local showTitlePanel -- forward declaration; defined in Title Selection UI section below
+local hideTitlePanel
+local titlePanelShowing = false
 local changeFactionBtn = Instance.new("TextButton")
-changeFactionBtn.Name = "ChangeFactionBtn"
+changeFactionBtn.Name = "TitlesBtn"
 changeFactionBtn.Size = UDim2.fromOffset(140, 28)
 changeFactionBtn.Position = UDim2.new(0, 150, 1, -52)
 changeFactionBtn.BackgroundColor3 = Color3.fromRGB(15, 18, 25)
@@ -775,8 +890,8 @@ changeFactionBtn.BackgroundTransparency = 0.6
 changeFactionBtn.BorderSizePixel = 0
 changeFactionBtn.Font = Enum.Font.GothamMedium
 changeFactionBtn.TextSize = 11
-changeFactionBtn.TextColor3 = Color3.fromRGB(200, 140, 80)
-changeFactionBtn.Text = "Change Faction"
+changeFactionBtn.TextColor3 = Color3.fromRGB(140, 180, 255)
+changeFactionBtn.Text = "Titles"
 changeFactionBtn.AutoButtonColor = false
 changeFactionBtn.ZIndex = 16
 changeFactionBtn.Parent = statPanel
@@ -786,116 +901,23 @@ do
 	c.Parent = changeFactionBtn
 end
 local changeFactionStroke = Instance.new("UIStroke")
-changeFactionStroke.Color = Color3.fromRGB(160, 110, 50)
+changeFactionStroke.Color = Color3.fromRGB(80, 110, 180)
 changeFactionStroke.Thickness = 1
 changeFactionStroke.Transparency = 0.3
 changeFactionStroke.Parent = changeFactionBtn
 
-local factionResetConfirm = Instance.new("Frame")
-factionResetConfirm.Name = "FactionResetConfirm"
-factionResetConfirm.Size = UDim2.fromOffset(280, 155)
-factionResetConfirm.Position = UDim2.fromScale(0.5, 0.5)
-factionResetConfirm.AnchorPoint = Vector2.new(0.5, 0.5)
-factionResetConfirm.BackgroundColor3 = Color3.fromRGB(12, 14, 22)
-factionResetConfirm.BackgroundTransparency = 0.02
-factionResetConfirm.BorderSizePixel = 0
-factionResetConfirm.Visible = false
-factionResetConfirm.ZIndex = 22
-factionResetConfirm.Parent = statPanel
-do
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, 10)
-	c.Parent = factionResetConfirm
-	local s = Instance.new("UIStroke")
-	s.Color = Color3.fromRGB(200, 140, 50)
-	s.Thickness = 1.5
-	s.Transparency = 0.2
-	s.Parent = factionResetConfirm
-	local t = Instance.new("TextLabel")
-	t.Size = UDim2.new(1, -20, 0, 24)
-	t.Position = UDim2.fromOffset(10, 10)
-	t.BackgroundTransparency = 1
-	t.Font = Enum.Font.GothamBold
-	t.TextSize = 14
-	t.TextColor3 = Color3.fromRGB(220, 160, 50)
-	t.TextXAlignment = Enum.TextXAlignment.Left
-	t.Text = "Change Faction?"
-	t.ZIndex = 23
-	t.Parent = factionResetConfirm
-	local m = Instance.new("TextLabel")
-	m.Size = UDim2.new(1, -20, 0, 56)
-	m.Position = UDim2.fromOffset(10, 36)
-	m.BackgroundTransparency = 1
-	m.Font = Enum.Font.Gotham
-	m.TextSize = 11
-	m.TextColor3 = Color3.fromRGB(170, 170, 190)
-	m.TextWrapped = true
-	m.TextXAlignment = Enum.TextXAlignment.Left
-	m.TextYAlignment = Enum.TextYAlignment.Top
-	m.Text = "Your faction will be reset and you will pick a new one. Faction-locked stat points (Breath DMG / Demon Art DMG) will be refunded."
-	m.ZIndex = 23
-	m.Parent = factionResetConfirm
-	local yes = Instance.new("TextButton")
-	yes.Size = UDim2.fromOffset(100, 30)
-	yes.Position = UDim2.new(0, 20, 1, -42)
-	yes.BackgroundColor3 = Color3.fromRGB(180, 120, 30)
-	yes.BorderSizePixel = 0
-	yes.Font = Enum.Font.GothamBold
-	yes.TextSize = 12
-	yes.TextColor3 = TEXT_COLOR
-	yes.Text = "Confirm"
-	yes.AutoButtonColor = false
-	yes.ZIndex = 23
-	yes.Parent = factionResetConfirm
-	local yc = Instance.new("UICorner")
-	yc.CornerRadius = UDim.new(0, 6)
-	yc.Parent = yes
-	local no = Instance.new("TextButton")
-	no.Size = UDim2.fromOffset(100, 30)
-	no.Position = UDim2.new(1, -120, 1, -42)
-	no.BackgroundColor3 = Color3.fromRGB(50, 55, 70)
-	no.BorderSizePixel = 0
-	no.Font = Enum.Font.GothamBold
-	no.TextSize = 12
-	no.TextColor3 = Color3.fromRGB(180, 180, 200)
-	no.Text = "Cancel"
-	no.AutoButtonColor = false
-	no.ZIndex = 23
-	no.Parent = factionResetConfirm
-	local nc = Instance.new("UICorner")
-	nc.CornerRadius = UDim.new(0, 6)
-	nc.Parent = no
-	yes.MouseButton1Click:Connect(function()
-		factionResetConfirm.Visible = false
-		ResetFactionRemote:FireServer()
-	end)
-	no.MouseButton1Click:Connect(function()
-		factionResetConfirm.Visible = false
-	end)
-	yes.MouseEnter:Connect(function()
-		TweenService:Create(yes, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(210, 145, 40)}):Play()
-	end)
-	yes.MouseLeave:Connect(function()
-		TweenService:Create(yes, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(180, 120, 30)}):Play()
-	end)
-	no.MouseEnter:Connect(function()
-		TweenService:Create(no, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(70, 75, 95)}):Play()
-	end)
-	no.MouseLeave:Connect(function()
-		TweenService:Create(no, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(50, 55, 70)}):Play()
-	end)
-end
-
 changeFactionBtn.MouseEnter:Connect(function()
 	TweenService:Create(changeFactionBtn, TweenInfo.new(0.1), {BackgroundTransparency = 0.3}):Play()
-	TweenService:Create(changeFactionStroke, TweenInfo.new(0.1), {Color = Color3.fromRGB(200, 150, 70), Transparency = 0}):Play()
+	TweenService:Create(changeFactionStroke, TweenInfo.new(0.1), {Color = Color3.fromRGB(120, 160, 255), Transparency = 0}):Play()
 end)
 changeFactionBtn.MouseLeave:Connect(function()
 	TweenService:Create(changeFactionBtn, TweenInfo.new(0.1), {BackgroundTransparency = 0.6}):Play()
-	TweenService:Create(changeFactionStroke, TweenInfo.new(0.1), {Color = Color3.fromRGB(160, 110, 50), Transparency = 0.3}):Play()
+	TweenService:Create(changeFactionStroke, TweenInfo.new(0.1), {Color = Color3.fromRGB(80, 110, 180), Transparency = 0.3}):Play()
 end)
 changeFactionBtn.MouseButton1Click:Connect(function()
-	factionResetConfirm.Visible = true
+	if showTitlePanel then
+		showTitlePanel()
+	end
 end)
 
 local function updateStatPanel()
@@ -1077,10 +1099,16 @@ local function showLevelUpNotification(newLevel)
 end
 
 -- ==================== STAT POINTS HINT (on HUD) ====================
+local HUD_ACTION_ICON_SIZE = 32
+local HUD_ACTION_ICON_GAP = 8
+local HUD_ACTION_ICON_BASE_X = 20
+local HUD_ACTION_ICON_Y = -BOTTOM_OFFSET - container.Size.Y.Offset - 6
+local HUD_ACTION_PANEL_X = HUD_ACTION_ICON_BASE_X + (HUD_ACTION_ICON_SIZE * 2) + (HUD_ACTION_ICON_GAP * 2) + 10
+
 local statHint = Instance.new("TextLabel")
 statHint.Name = "StatHint"
-statHint.Size = UDim2.fromOffset(BAR_WIDTH + PADDING * 2, 18)
-statHint.Position = UDim2.new(0, 20, 1, -BOTTOM_OFFSET - container.Size.Y.Offset - 4)
+statHint.Size = UDim2.fromOffset(math.max(BAR_WIDTH + PADDING * 2 - HUD_ACTION_PANEL_X + 20, 120), 18)
+statHint.Position = UDim2.new(0, HUD_ACTION_PANEL_X, 1, -BOTTOM_OFFSET - container.Size.Y.Offset - 10)
 statHint.AnchorPoint = Vector2.new(0, 1)
 statHint.BackgroundTransparency = 1
 statHint.Font = Enum.Font.GothamBold
@@ -1105,18 +1133,19 @@ local function updateStatHint()
 end
 
 -- ==================== STAT ICON BUTTON ====================
-local STAT_ICON_SIZE = 28
-local statIconBtn = Instance.new("ImageButton")
+local STAT_ICON_SIZE = HUD_ACTION_ICON_SIZE
+local statIconBtn = Instance.new("TextButton")
 statIconBtn.Name = "StatIconBtn"
 statIconBtn.Size = UDim2.fromOffset(STAT_ICON_SIZE, STAT_ICON_SIZE)
-statIconBtn.Position = UDim2.new(0, 20 + BAR_WIDTH + PADDING * 2 - STAT_ICON_SIZE, 1, -BOTTOM_OFFSET - container.Size.Y.Offset - 6)
+statIconBtn.Position = UDim2.new(0, HUD_ACTION_ICON_BASE_X, 1, HUD_ACTION_ICON_Y)
 statIconBtn.AnchorPoint = Vector2.new(0, 1)
 statIconBtn.BackgroundColor3 = Color3.fromRGB(20, 24, 32)
 statIconBtn.BackgroundTransparency = 0.2
 statIconBtn.BorderSizePixel = 0
-statIconBtn.Image = "rbxassetid://129933134513508"
-statIconBtn.ImageColor3 = Color3.fromRGB(200, 180, 255)
-statIconBtn.ScaleType = Enum.ScaleType.Fit
+statIconBtn.Text = "✚"
+statIconBtn.TextColor3 = Color3.fromRGB(220, 205, 255)
+statIconBtn.TextSize = 18
+statIconBtn.Font = Enum.Font.GothamBold
 statIconBtn.AutoButtonColor = false
 statIconBtn.ZIndex = 6
 statIconBtn.Parent = screenGui
@@ -1157,11 +1186,31 @@ local tooltipCorner = Instance.new("UICorner")
 tooltipCorner.CornerRadius = UDim.new(0, 4)
 tooltipCorner.Parent = statIconTooltip
 
+local statIconBadge = Instance.new("TextLabel")
+statIconBadge.Name = "PointBadge"
+statIconBadge.Size = UDim2.fromOffset(18, 18)
+statIconBadge.Position = UDim2.new(1, -2, 0, 2)
+statIconBadge.AnchorPoint = Vector2.new(1, 0)
+statIconBadge.BackgroundColor3 = GOLD_COLOR
+statIconBadge.BorderSizePixel = 0
+statIconBadge.Font = Enum.Font.GothamBold
+statIconBadge.TextSize = 10
+statIconBadge.TextColor3 = Color3.fromRGB(20, 18, 12)
+statIconBadge.Text = "0"
+statIconBadge.Visible = false
+statIconBadge.ZIndex = 8
+statIconBadge.Parent = statIconBtn
+do
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(1, 0)
+	c.Parent = statIconBadge
+end
+
 statIconBtn.MouseEnter:Connect(function()
 	statIconTooltip.Visible = true
 	TweenService:Create(statIconBtn, TweenInfo.new(0.12), {
 		BackgroundColor3 = Color3.fromRGB(35, 40, 55),
-		ImageColor3 = Color3.fromRGB(230, 210, 255),
+		TextColor3 = Color3.fromRGB(245, 235, 255),
 	}):Play()
 end)
 
@@ -1169,7 +1218,7 @@ statIconBtn.MouseLeave:Connect(function()
 	statIconTooltip.Visible = false
 	TweenService:Create(statIconBtn, TweenInfo.new(0.12), {
 		BackgroundColor3 = Color3.fromRGB(20, 24, 32),
-		ImageColor3 = Color3.fromRGB(200, 180, 255),
+		TextColor3 = Color3.fromRGB(220, 205, 255),
 	}):Play()
 end)
 
@@ -1202,29 +1251,35 @@ end
 
 local function updateStatIconPulse()
 	if cachedStatPoints > 0 then
+		statIconBadge.Text = tostring(math.min(cachedStatPoints, 99))
+		statIconBadge.Visible = true
 		startPulse()
 	else
+		statIconBadge.Visible = false
 		stopPulse()
 	end
 end
 
 -- ==================== INVENTORY ICON BUTTON ====================
-local invIconBtn = Instance.new("ImageButton")
+local toggleInventoryPanel -- forward declaration; defined after the panel is built
+local invIconBadge
+local invIconBtn = Instance.new("TextButton")
 do
 	local btn = invIconBtn
 	btn.Name = "InventoryIconBtn"
 	btn.Size = UDim2.fromOffset(STAT_ICON_SIZE, STAT_ICON_SIZE)
 	btn.Position = UDim2.new(
-		0, 20 + BAR_WIDTH + PADDING * 2 + 8,
-		1, -BOTTOM_OFFSET - container.Size.Y.Offset - 6
+		0, HUD_ACTION_ICON_BASE_X + STAT_ICON_SIZE + HUD_ACTION_ICON_GAP,
+		1, HUD_ACTION_ICON_Y
 	)
 	btn.AnchorPoint = Vector2.new(0, 1)
 	btn.BackgroundColor3 = Color3.fromRGB(20, 24, 32)
 	btn.BackgroundTransparency = 0.2
 	btn.BorderSizePixel = 0
-	btn.Image = "rbxassetid://6034818372"
-	btn.ImageColor3 = Color3.fromRGB(180, 200, 255)
-	btn.ScaleType = Enum.ScaleType.Fit
+	btn.Text = "🎒"
+	btn.TextColor3 = Color3.fromRGB(195, 215, 255)
+	btn.TextSize = 18
+	btn.Font = Enum.Font.GothamBold
 	btn.AutoButtonColor = false
 	btn.ZIndex = 6
 	btn.Parent = screenGui
@@ -1254,7 +1309,7 @@ do
 	tt.TextColor3 = Color3.fromRGB(200, 200, 220)
 	tt.TextStrokeColor3 = SHADOW_COLOR
 	tt.TextStrokeTransparency = 0.5
-	tt.Text = "Abilities & Scrolls"
+	tt.Text = "Inventory"
 	tt.Visible = false
 	tt.ZIndex = 7
 	tt.Parent = btn
@@ -1263,11 +1318,31 @@ do
 	tc.CornerRadius = UDim.new(0, 4)
 	tc.Parent = tt
 
+	invIconBadge = Instance.new("TextLabel")
+	invIconBadge.Name = "ItemBadge"
+	invIconBadge.Size = UDim2.fromOffset(18, 18)
+	invIconBadge.Position = UDim2.new(1, -2, 0, 2)
+	invIconBadge.AnchorPoint = Vector2.new(1, 0)
+	invIconBadge.BackgroundColor3 = Color3.fromRGB(90, 150, 255)
+	invIconBadge.BorderSizePixel = 0
+	invIconBadge.Font = Enum.Font.GothamBold
+	invIconBadge.TextSize = 10
+	invIconBadge.TextColor3 = Color3.fromRGB(245, 248, 255)
+	invIconBadge.Text = "0"
+	invIconBadge.Visible = false
+	invIconBadge.ZIndex = 8
+	invIconBadge.Parent = btn
+	do
+		local badgeCorner = Instance.new("UICorner")
+		badgeCorner.CornerRadius = UDim.new(1, 0)
+		badgeCorner.Parent = invIconBadge
+	end
+
 	btn.MouseEnter:Connect(function()
 		tt.Visible = true
 		TweenService:Create(btn, TweenInfo.new(0.12), {
 			BackgroundColor3 = Color3.fromRGB(35, 40, 55),
-			ImageColor3 = Color3.fromRGB(210, 225, 255),
+			TextColor3 = Color3.fromRGB(230, 240, 255),
 		}):Play()
 	end)
 
@@ -1275,13 +1350,258 @@ do
 		tt.Visible = false
 		TweenService:Create(btn, TweenInfo.new(0.12), {
 			BackgroundColor3 = Color3.fromRGB(20, 24, 32),
-			ImageColor3 = Color3.fromRGB(180, 200, 255),
+			TextColor3 = Color3.fromRGB(195, 215, 255),
 		}):Play()
 	end)
 
 	btn.Activated:Connect(function()
-		print("[HUDController] Inventory button clicked — scroll panel not yet implemented")
+		toggleInventoryPanel()
 	end)
+end
+
+local function updateInventoryIconBadge()
+	if not invIconBadge then return end
+	local count = #cachedInventory
+	invIconBadge.Text = tostring(math.min(count, 99))
+	invIconBadge.Visible = count > 0
+end
+
+-- ==================== INVENTORY PANEL ====================
+local invPanelOpen = false
+
+local invPanel = Instance.new("Frame")
+invPanel.Name = "InventoryPanel"
+invPanel.Size = UDim2.fromOffset(300, 300)
+invPanel.Position = UDim2.new(0, HUD_ACTION_PANEL_X, 1, -BOTTOM_OFFSET - 6)
+invPanel.AnchorPoint = Vector2.new(0, 1)
+invPanel.BackgroundColor3 = STAT_PANEL_BG
+invPanel.BackgroundTransparency = 0.05
+invPanel.BorderSizePixel = 0
+invPanel.Visible = false
+invPanel.ZIndex = 15
+invPanel.Parent = screenGui
+do
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 12)
+	c.Parent = invPanel
+	local s = Instance.new("UIStroke")
+	s.Color = Color3.fromRGB(60, 65, 80)
+	s.Thickness = 1.5
+	s.Parent = invPanel
+end
+
+local invPanelTitle = Instance.new("TextLabel")
+invPanelTitle.Size = UDim2.new(1, 0, 0, 36)
+invPanelTitle.Position = UDim2.fromOffset(0, 0)
+invPanelTitle.BackgroundTransparency = 1
+invPanelTitle.Font = Enum.Font.GothamBold
+invPanelTitle.TextSize = 15
+invPanelTitle.TextColor3 = TEXT_COLOR
+invPanelTitle.Text = "SCROLLS & FRUITS"
+invPanelTitle.ZIndex = 16
+invPanelTitle.Parent = invPanel
+
+local invPanelHint = Instance.new("TextLabel")
+invPanelHint.Size = UDim2.new(1, -16, 0, 16)
+invPanelHint.Position = UDim2.fromOffset(8, 34)
+invPanelHint.BackgroundTransparency = 1
+invPanelHint.Font = Enum.Font.Gotham
+invPanelHint.TextSize = 10
+invPanelHint.TextColor3 = Color3.fromRGB(120, 120, 140)
+invPanelHint.TextXAlignment = Enum.TextXAlignment.Left
+invPanelHint.Text = "Equip a scroll or fruit to use its abilities."
+invPanelHint.ZIndex = 16
+invPanelHint.Parent = invPanel
+
+local invScrollFrame = Instance.new("ScrollingFrame")
+invScrollFrame.Name = "ItemList"
+invScrollFrame.Size = UDim2.new(1, -16, 1, -60)
+invScrollFrame.Position = UDim2.fromOffset(8, 54)
+invScrollFrame.BackgroundTransparency = 1
+invScrollFrame.BorderSizePixel = 0
+invScrollFrame.ScrollBarThickness = 4
+invScrollFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 85, 100)
+invScrollFrame.CanvasSize = UDim2.fromOffset(0, 0)
+invScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+invScrollFrame.ZIndex = 16
+invScrollFrame.Parent = invPanel
+
+local invListLayout = Instance.new("UIListLayout")
+invListLayout.Padding = UDim.new(0, 6)
+invListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+invListLayout.Parent = invScrollFrame
+
+local function rebuildInventoryPanel()
+	for _, child in invScrollFrame:GetChildren() do
+		if child:IsA("Frame") then
+				child:Destroy()
+			end
+	end
+
+	local RARITY_COLORS = {
+		Common = Color3.fromRGB(180, 180, 180),
+		Rare = Color3.fromRGB(60, 140, 255),
+		Legendary = Color3.fromRGB(255, 165, 0),
+	}
+
+	if #cachedInventory == 0 then
+		local empty = Instance.new("TextLabel")
+		empty.Size = UDim2.new(1, 0, 0, 40)
+		empty.BackgroundTransparency = 1
+		empty.Font = Enum.Font.Gotham
+		empty.TextSize = 12
+		empty.TextColor3 = Color3.fromRGB(120, 120, 140)
+		empty.Text = "No items in inventory."
+		empty.ZIndex = 17
+		empty.Parent = invScrollFrame
+		return
+	end
+
+	for i, itemId in cachedInventory do
+		local item = ItemsModule and ItemsModule.getScroll(itemId)
+		if not item then continue end
+
+		local isEquipped = (item.Style == cachedEquippedStyle)
+		local rarityColor = RARITY_COLORS[item.Rarity] or RARITY_COLORS.Common
+
+		local row = Instance.new("Frame")
+		row.Name = itemId .. "Row"
+		row.Size = UDim2.new(1, 0, 0, 54)
+		row.BackgroundColor3 = isEquipped and Color3.fromRGB(30, 38, 55) or Color3.fromRGB(22, 25, 35)
+		row.BackgroundTransparency = 0.2
+		row.BorderSizePixel = 0
+		row.LayoutOrder = i
+		row.ZIndex = 17
+		row.Parent = invScrollFrame
+		do
+			local c = Instance.new("UICorner")
+			c.CornerRadius = UDim.new(0, 6)
+			c.Parent = row
+			if isEquipped then
+				local s = Instance.new("UIStroke")
+				s.Color = rarityColor
+				s.Thickness = 1.5
+				s.Transparency = 0.2
+				s.Parent = row
+			end
+		end
+
+		local iconBox = Instance.new("Frame")
+		iconBox.Size = UDim2.fromOffset(42, 42)
+		iconBox.Position = UDim2.fromOffset(6, 6)
+		iconBox.BackgroundColor3 = item.Color or Color3.fromRGB(40, 40, 55)
+		iconBox.BackgroundTransparency = 0.3
+		iconBox.BorderSizePixel = 0
+		iconBox.ZIndex = 18
+		iconBox.Parent = row
+		do
+			local ic = Instance.new("UICorner")
+			ic.CornerRadius = UDim.new(0, 8)
+			ic.Parent = iconBox
+			local ig = Instance.new("UIGradient")
+			ig.Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(0.6, 0.6, 0.6))
+			ig.Rotation = 135
+			ig.Parent = iconBox
+		end
+		local iconLabel = Instance.new("TextLabel")
+		iconLabel.Size = UDim2.fromScale(1, 1)
+		iconLabel.BackgroundTransparency = 1
+		iconLabel.Font = Enum.Font.GothamBold
+		iconLabel.TextSize = 22
+		iconLabel.TextColor3 = Color3.new(1, 1, 1)
+		iconLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+		iconLabel.TextStrokeTransparency = 0.4
+		iconLabel.Text = item.Icon or "?"
+		iconLabel.ZIndex = 19
+		iconLabel.Parent = iconBox
+
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.fromOffset(162, 18)
+		nameLabel.Position = UDim2.fromOffset(54, 6)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Font = Enum.Font.GothamBold
+		nameLabel.TextSize = 12
+		nameLabel.TextColor3 = rarityColor
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.Text = item.Name
+		nameLabel.ZIndex = 18
+		nameLabel.Parent = row
+
+		local descLabel = Instance.new("TextLabel")
+		descLabel.Size = UDim2.fromOffset(162, 24)
+		descLabel.Position = UDim2.fromOffset(54, 26)
+		descLabel.BackgroundTransparency = 1
+		descLabel.Font = Enum.Font.Gotham
+		descLabel.TextSize = 9
+		descLabel.TextColor3 = Color3.fromRGB(140, 140, 160)
+		descLabel.TextXAlignment = Enum.TextXAlignment.Left
+		descLabel.TextWrapped = true
+		descLabel.Text = item.Description
+		descLabel.ZIndex = 18
+		descLabel.Parent = row
+
+		local equipBtn = Instance.new("TextButton")
+		equipBtn.Size = UDim2.fromOffset(60, 30)
+		equipBtn.Position = UDim2.new(1, -68, 0.5, 0)
+		equipBtn.AnchorPoint = Vector2.new(0, 0.5)
+		equipBtn.BackgroundColor3 = isEquipped and Color3.fromRGB(40, 90, 60) or STAT_BTN_COLOR
+		equipBtn.BorderSizePixel = 0
+		equipBtn.Font = Enum.Font.GothamBold
+		equipBtn.TextSize = 11
+		equipBtn.TextColor3 = isEquipped and Color3.fromRGB(80, 220, 120) or GOLD_COLOR
+		equipBtn.Text = isEquipped and "Equipped" or "Equip"
+		equipBtn.AutoButtonColor = false
+		equipBtn.ZIndex = 18
+		equipBtn.Parent = row
+		do
+			local c = Instance.new("UICorner")
+			c.CornerRadius = UDim.new(0, 6)
+			c.Parent = equipBtn
+		end
+
+		if not isEquipped then
+			equipBtn.MouseButton1Click:Connect(function()
+				if EquipScrollRemote then
+					EquipScrollRemote:FireServer(itemId)
+					hudLog("EquipScroll requested: item=" .. tostring(itemId) .. ", style=" .. tostring(item.Style))
+				else
+					warn("[HUDController] EquipScroll remote missing; cannot equip item " .. tostring(itemId))
+				end
+			end)
+			equipBtn.MouseEnter:Connect(function()
+				TweenService:Create(equipBtn, TweenInfo.new(0.1), {BackgroundColor3 = STAT_BTN_HOVER}):Play()
+			end)
+			equipBtn.MouseLeave:Connect(function()
+				TweenService:Create(equipBtn, TweenInfo.new(0.1), {BackgroundColor3 = STAT_BTN_COLOR}):Play()
+			end)
+		end
+	end
+end
+
+toggleInventoryPanel = function()
+	invPanelOpen = not invPanelOpen
+	hudLog("Inventory panel " .. (invPanelOpen and "opened" or "closed") .. "; items=" .. tostring(#cachedInventory))
+	if invPanelOpen then
+		updateInventoryIconBadge()
+		rebuildInventoryPanel()
+		invPanel.Visible = true
+		invPanel.Size = UDim2.fromOffset(300, 0)
+		invPanel.BackgroundTransparency = 1
+		TweenService:Create(invPanel, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Size = UDim2.fromOffset(300, 300),
+			BackgroundTransparency = 0.05,
+		}):Play()
+	else
+		TweenService:Create(invPanel, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			Size = UDim2.fromOffset(300, 0),
+			BackgroundTransparency = 1,
+		}):Play()
+		task.delay(0.18, function()
+			if not invPanelOpen then
+					invPanel.Visible = false
+				end
+		end)
+	end
 end
 
 -- ==================== DEATH SCREEN ====================
@@ -1404,10 +1724,13 @@ errorText.Parent = errorBanner
 
 -- ==================== EVENT CONNECTIONS ====================
 HPChanged.OnClientEvent:Connect(function(hp, maxHp)
+	hudLog("HPChanged received: " .. tostring(hp) .. "/" .. tostring(maxHp))
+	forceHudVisible("HPChanged")
 	updateHP(hp, maxHp)
 end)
 
 StaminaChanged.OnClientEvent:Connect(function(stamina, maxStam)
+	hudLog("StaminaChanged received: " .. tostring(stamina) .. "/" .. tostring(maxStam))
 	updateStamina(stamina, maxStam)
 end)
 
@@ -1420,6 +1743,7 @@ PlayerRespawn.OnClientEvent:Connect(function()
 end)
 
 StatsChanged.OnClientEvent:Connect(function(level, xp, xpNeeded, totalXP)
+	hudLog("StatsChanged received: level=" .. tostring(level) .. ", xp=" .. tostring(xp) .. "/" .. tostring(xpNeeded))
 	if level > currentLevel then
 		flashLevelUp()
 	end
@@ -1478,19 +1802,27 @@ end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
+	if titlePanelShowing and hideTitlePanel and (
+		input.KeyCode == Enum.KeyCode.Escape
+			or input.KeyCode == Enum.KeyCode.Backspace
+			or input.KeyCode == Enum.KeyCode.ButtonB
+	) then
+		hudLog("Title panel closed from input: " .. tostring(input.KeyCode))
+		hideTitlePanel()
+		return
+	end
 	if input.KeyCode == Enum.KeyCode.P or input.KeyCode == Enum.KeyCode.DPadUp then
 		toggleStatPanel()
 	end
 end)
 
--- ==================== FACTION SELECTION UI ====================
+-- ==================== TITLE SELECTION UI ====================
+local function initTitleSelectionUI()
 local SLAYER_COLOR = Color3.fromRGB(50, 120, 220)
-local SLAYER_HOVER = Color3.fromRGB(70, 145, 255)
 local DEMON_COLOR = Color3.fromRGB(180, 40, 60)
-local DEMON_HOVER = Color3.fromRGB(220, 55, 75)
 
 local factionOverlay = Instance.new("Frame")
-factionOverlay.Name = "FactionOverlay"
+factionOverlay.Name = "TitleOverlay"
 factionOverlay.Size = UDim2.fromScale(1, 1)
 factionOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 factionOverlay.BackgroundTransparency = 0.35
@@ -1499,9 +1831,25 @@ factionOverlay.Visible = false
 factionOverlay.ZIndex = 30
 factionOverlay.Parent = screenGui
 
+local titleBackdropClose = Instance.new("TextButton")
+titleBackdropClose.Name = "BackdropClose"
+titleBackdropClose.Size = UDim2.fromScale(1, 1)
+titleBackdropClose.BackgroundTransparency = 1
+titleBackdropClose.BorderSizePixel = 0
+titleBackdropClose.Text = ""
+titleBackdropClose.AutoButtonColor = false
+titleBackdropClose.ZIndex = 30
+titleBackdropClose.Parent = factionOverlay
+titleBackdropClose.MouseButton1Click:Connect(function()
+	if titlePanelShowing and hideTitlePanel then
+		hudLog("Title panel closed from backdrop")
+		hideTitlePanel()
+	end
+end)
+
 local factionPanel = Instance.new("Frame")
-factionPanel.Name = "FactionPanel"
-factionPanel.Size = UDim2.fromOffset(520, 340)
+factionPanel.Name = "TitlePanel"
+factionPanel.Size = UDim2.fromOffset(620, 440)
 factionPanel.Position = UDim2.fromScale(0.5, 0.5)
 factionPanel.AnchorPoint = Vector2.new(0.5, 0.5)
 factionPanel.BackgroundColor3 = Color3.fromRGB(12, 14, 20)
@@ -1509,53 +1857,136 @@ factionPanel.BackgroundTransparency = 0.05
 factionPanel.BorderSizePixel = 0
 factionPanel.ZIndex = 31
 factionPanel.Parent = factionOverlay
-
-local factionPanelCorner = Instance.new("UICorner")
-factionPanelCorner.CornerRadius = UDim.new(0, 14)
-factionPanelCorner.Parent = factionPanel
-
-local factionPanelStroke = Instance.new("UIStroke")
-factionPanelStroke.Color = Color3.fromRGB(80, 85, 100)
-factionPanelStroke.Thickness = 1.5
-factionPanelStroke.Parent = factionPanel
+do
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 14)
+	c.Parent = factionPanel
+	local s = Instance.new("UIStroke")
+	s.Color = Color3.fromRGB(80, 85, 100)
+	s.Thickness = 1.5
+	s.Parent = factionPanel
+end
 
 local factionTitle = Instance.new("TextLabel")
 factionTitle.Name = "Title"
-factionTitle.Size = UDim2.new(1, 0, 0, 44)
+factionTitle.Size = UDim2.new(1, 0, 0, 40)
 factionTitle.Position = UDim2.fromOffset(0, 10)
 factionTitle.BackgroundTransparency = 1
 factionTitle.Font = Enum.Font.GothamBold
-factionTitle.TextSize = 22
+factionTitle.TextSize = 20
 factionTitle.TextColor3 = TEXT_COLOR
 factionTitle.TextStrokeColor3 = SHADOW_COLOR
 factionTitle.TextStrokeTransparency = 0.3
-factionTitle.Text = "CHOOSE YOUR PATH"
+factionTitle.Text = "TITLES"
 factionTitle.ZIndex = 32
 factionTitle.Parent = factionPanel
 
 local factionSubtitle = Instance.new("TextLabel")
-factionSubtitle.Name = "Subtitle"
-factionSubtitle.Size = UDim2.new(1, 0, 0, 20)
-factionSubtitle.Position = UDim2.fromOffset(0, 50)
+factionSubtitle.Size = UDim2.new(1, 0, 0, 18)
+factionSubtitle.Position = UDim2.fromOffset(0, 46)
 factionSubtitle.BackgroundTransparency = 1
 factionSubtitle.Font = Enum.Font.Gotham
-factionSubtitle.TextSize = 13
-factionSubtitle.TextColor3 = Color3.fromRGB(160, 160, 180)
-factionSubtitle.Text = "This choice is permanent and cannot be changed."
+factionSubtitle.TextSize = 12
+factionSubtitle.TextColor3 = Color3.fromRGB(140, 140, 160)
+factionSubtitle.Text = "Equip a title to gain its buff. Titles gain XP as you fight."
 factionSubtitle.ZIndex = 32
 factionSubtitle.Parent = factionPanel
 
-local factionChosen = false
+local titleCloseBtn = Instance.new("TextButton")
+titleCloseBtn.Name = "CloseButton"
+titleCloseBtn.Size = UDim2.fromOffset(30, 30)
+titleCloseBtn.Position = UDim2.new(1, -42, 0, 14)
+titleCloseBtn.BackgroundColor3 = Color3.fromRGB(25, 28, 38)
+titleCloseBtn.BackgroundTransparency = 0.1
+titleCloseBtn.BorderSizePixel = 0
+titleCloseBtn.Font = Enum.Font.GothamBold
+titleCloseBtn.TextSize = 14
+titleCloseBtn.TextColor3 = Color3.fromRGB(220, 225, 235)
+titleCloseBtn.Text = "X"
+titleCloseBtn.AutoButtonColor = false
+titleCloseBtn.ZIndex = 34
+titleCloseBtn.Parent = factionPanel
+do
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 6)
+	c.Parent = titleCloseBtn
+end
 
-local function createFactionCard(name, displayName, description, traits, color, hoverColor, xPos)
+local titleListFrame = Instance.new("ScrollingFrame")
+titleListFrame.Name = "TitleList"
+titleListFrame.Size = UDim2.new(1, -28, 1, -86)
+titleListFrame.Position = UDim2.fromOffset(14, 74)
+titleListFrame.BackgroundTransparency = 1
+titleListFrame.BorderSizePixel = 0
+titleListFrame.ScrollBarThickness = 5
+titleListFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 90, 120)
+titleListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+titleListFrame.CanvasSize = UDim2.fromOffset(0, 0)
+titleListFrame.ZIndex = 32
+titleListFrame.Parent = factionPanel
+
+local titleListLayout = Instance.new("UIListLayout")
+titleListLayout.Padding = UDim.new(0, 8)
+titleListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+titleListLayout.Parent = titleListFrame
+
+local titleListPadding = Instance.new("UIPadding")
+titleListPadding.PaddingRight = UDim.new(0, 6)
+titleListPadding.Parent = titleListFrame
+
+titleCloseBtn.MouseEnter:Connect(function()
+	TweenService:Create(titleCloseBtn, TweenInfo.new(0.12), {
+		BackgroundColor3 = Color3.fromRGB(45, 50, 64),
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+	}):Play()
+end)
+titleCloseBtn.MouseLeave:Connect(function()
+	TweenService:Create(titleCloseBtn, TweenInfo.new(0.12), {
+		BackgroundColor3 = Color3.fromRGB(25, 28, 38),
+		TextColor3 = Color3.fromRGB(220, 225, 235),
+	}):Play()
+end)
+titleCloseBtn.MouseButton1Click:Connect(function()
+	if hideTitlePanel then
+		hudLog("Title panel closed from close button")
+		hideTitlePanel()
+	else
+		warn("[HUDController] Title close requested before hideTitlePanel was initialized")
+	end
+end)
+
+local NORMAL_DISPLAY_ORDER = 30
+local MODAL_DISPLAY_ORDER = 100
+
+-- title card refs so we can refresh them
+local titleCardRefs = {}
+
+local function brightenColor(color)
+	return Color3.new(
+		math.clamp(color.R + 0.08, 0, 1),
+		math.clamp(color.G + 0.08, 0, 1),
+		math.clamp(color.B + 0.08, 0, 1)
+	)
+end
+
+local function createTitleRow(titleId, layoutOrder)
+	local titleDef = TitleModule and TitleModule.getTitle(titleId)
+	if not titleDef then
+		warn("[HUDController] Cannot create title row for unknown title: " .. tostring(titleId))
+		return
+	end
+	local color = titleDef.Color or (titleDef.Faction == "Demon" and DEMON_COLOR or SLAYER_COLOR)
+	local hoverColor = brightenColor(color)
+
 	local card = Instance.new("Frame")
-	card.Name = name .. "Card"
-	card.Size = UDim2.fromOffset(220, 220)
-	card.Position = UDim2.fromOffset(xPos, 82)
+	card.Name = titleId .. "Row"
+	card.Size = UDim2.new(1, 0, 0, 96)
+	card.Position = UDim2.fromOffset(0, 0)
 	card.BackgroundColor3 = Color3.fromRGB(20, 22, 32)
 	card.BorderSizePixel = 0
+	card.LayoutOrder = layoutOrder
 	card.ZIndex = 32
-	card.Parent = factionPanel
+	card.Parent = titleListFrame
 
 	local cardCorner = Instance.new("UICorner")
 	cardCorner.CornerRadius = UDim.new(0, 10)
@@ -1567,164 +1998,385 @@ local function createFactionCard(name, displayName, description, traits, color, 
 	cardStroke.Transparency = 0.5
 	cardStroke.Parent = card
 
-	local iconLabel = Instance.new("TextLabel")
-	iconLabel.Name = "Icon"
-	iconLabel.Size = UDim2.new(1, 0, 0, 50)
-	iconLabel.Position = UDim2.fromOffset(0, 12)
-	iconLabel.BackgroundTransparency = 1
-	iconLabel.Font = Enum.Font.GothamBold
-	iconLabel.TextSize = 36
-	iconLabel.TextColor3 = color
-	iconLabel.Text = name == "Slayer" and "⚔" or "👹"
-	iconLabel.ZIndex = 33
-	iconLabel.Parent = card
+	local iconLbl = Instance.new("TextLabel")
+	iconLbl.Size = UDim2.fromOffset(52, 52)
+	iconLbl.Position = UDim2.fromOffset(12, 12)
+	iconLbl.BackgroundTransparency = 1
+	iconLbl.Font = Enum.Font.GothamBold
+	iconLbl.TextSize = 30
+	iconLbl.TextColor3 = color
+	iconLbl.Text = titleDef.Icon or (titleDef.Faction == "Slayer" and "⚔" or "👹")
+	iconLbl.ZIndex = 33
+	iconLbl.Parent = card
 
-	local nameLabel = Instance.new("TextLabel")
-	nameLabel.Name = "Name"
-	nameLabel.Size = UDim2.new(1, 0, 0, 28)
-	nameLabel.Position = UDim2.fromOffset(0, 60)
-	nameLabel.BackgroundTransparency = 1
-	nameLabel.Font = Enum.Font.GothamBold
-	nameLabel.TextSize = 18
-	nameLabel.TextColor3 = color
-	nameLabel.TextStrokeColor3 = SHADOW_COLOR
-	nameLabel.TextStrokeTransparency = 0.5
-	nameLabel.Text = displayName
-	nameLabel.ZIndex = 33
-	nameLabel.Parent = card
+	local nameLbl = Instance.new("TextLabel")
+	nameLbl.Size = UDim2.new(1, -190, 0, 22)
+	nameLbl.Position = UDim2.fromOffset(70, 10)
+	nameLbl.BackgroundTransparency = 1
+	nameLbl.Font = Enum.Font.GothamBold
+	nameLbl.TextSize = 16
+	nameLbl.TextColor3 = color
+	nameLbl.TextStrokeColor3 = SHADOW_COLOR
+	nameLbl.TextStrokeTransparency = 0.5
+	nameLbl.Text = titleDef.Name
+	nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+	nameLbl.ZIndex = 33
+	nameLbl.Parent = card
 
-	local descLabel = Instance.new("TextLabel")
-	descLabel.Name = "Desc"
-	descLabel.Size = UDim2.new(1, -20, 0, 32)
-	descLabel.Position = UDim2.fromOffset(10, 90)
-	descLabel.BackgroundTransparency = 1
-	descLabel.Font = Enum.Font.Gotham
-	descLabel.TextSize = 11
-	descLabel.TextColor3 = Color3.fromRGB(180, 180, 195)
-	descLabel.TextWrapped = true
-	descLabel.Text = description
-	descLabel.ZIndex = 33
-	descLabel.Parent = card
+	local buffLbl = Instance.new("TextLabel")
+	buffLbl.Name = "BuffLabel"
+	buffLbl.Size = UDim2.new(1, -190, 0, 32)
+	buffLbl.Position = UDim2.fromOffset(70, 34)
+	buffLbl.BackgroundTransparency = 1
+	buffLbl.Font = Enum.Font.Gotham
+	buffLbl.TextSize = 10
+	buffLbl.TextColor3 = Color3.fromRGB(180, 180, 195)
+	buffLbl.TextWrapped = true
+	buffLbl.TextXAlignment = Enum.TextXAlignment.Left
+	buffLbl.Text = titleDef.Description or ""
+	buffLbl.ZIndex = 33
+	buffLbl.Parent = card
 
-	local traitsLabel = Instance.new("TextLabel")
-	traitsLabel.Name = "Traits"
-	traitsLabel.Size = UDim2.new(1, -20, 0, 40)
-	traitsLabel.Position = UDim2.fromOffset(10, 124)
-	traitsLabel.BackgroundTransparency = 1
-	traitsLabel.Font = Enum.Font.GothamMedium
-	traitsLabel.TextSize = 10
-	traitsLabel.TextColor3 = Color3.fromRGB(140, 140, 160)
-	traitsLabel.TextWrapped = true
-	traitsLabel.TextYAlignment = Enum.TextYAlignment.Top
-	traitsLabel.Text = traits
-	traitsLabel.ZIndex = 33
-	traitsLabel.Parent = card
+	-- XP bar area
+	local xpBg = Instance.new("Frame")
+	xpBg.Name = "XPBg"
+	xpBg.Size = UDim2.new(1, -200, 0, 8)
+	xpBg.Position = UDim2.fromOffset(70, 70)
+	xpBg.BackgroundColor3 = Color3.fromRGB(25, 28, 40)
+	xpBg.BorderSizePixel = 0
+	xpBg.ZIndex = 33
+	xpBg.Parent = card
+	do
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 4)
+		c.Parent = xpBg
+	end
 
-	local selectBtn = Instance.new("TextButton")
-	selectBtn.Name = "SelectBtn"
-	selectBtn.Size = UDim2.new(1, -30, 0, 34)
-	selectBtn.Position = UDim2.new(0, 15, 1, -46)
-	selectBtn.BackgroundColor3 = color
-	selectBtn.BorderSizePixel = 0
-	selectBtn.Font = Enum.Font.GothamBold
-	selectBtn.TextSize = 14
-	selectBtn.TextColor3 = TEXT_COLOR
-	selectBtn.Text = "Choose " .. displayName
-	selectBtn.AutoButtonColor = false
-	selectBtn.ZIndex = 33
-	selectBtn.Parent = card
+	local titleXPFill = Instance.new("Frame")
+	titleXPFill.Name = "XPFill"
+	titleXPFill.Size = UDim2.fromScale(0, 1)
+	titleXPFill.BackgroundColor3 = color
+	titleXPFill.BorderSizePixel = 0
+	titleXPFill.ZIndex = 34
+	titleXPFill.Parent = xpBg
+	do
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 4)
+		c.Parent = titleXPFill
+	end
 
-	local btnCorner = Instance.new("UICorner")
-	btnCorner.CornerRadius = UDim.new(0, 6)
-	btnCorner.Parent = selectBtn
+	local xpLbl = Instance.new("TextLabel")
+	xpLbl.Name = "XPLabel"
+	xpLbl.Size = UDim2.new(0.5, -78, 0, 14)
+	xpLbl.Position = UDim2.fromOffset(70, 80)
+	xpLbl.BackgroundTransparency = 1
+	xpLbl.Font = Enum.Font.GothamMedium
+	xpLbl.TextSize = 9
+	xpLbl.TextColor3 = Color3.fromRGB(140, 140, 160)
+	xpLbl.TextXAlignment = Enum.TextXAlignment.Left
+	xpLbl.Text = "Lv 0 — 0 / 100 XP"
+	xpLbl.ZIndex = 33
+	xpLbl.Parent = card
 
-	selectBtn.MouseEnter:Connect(function()
-		if factionChosen then return end
-		TweenService:Create(selectBtn, TweenInfo.new(0.15), {BackgroundColor3 = hoverColor}):Play()
-		TweenService:Create(cardStroke, TweenInfo.new(0.15), {Transparency = 0}):Play()
+	local buffValueLbl = Instance.new("TextLabel")
+	buffValueLbl.Name = "BuffValue"
+	buffValueLbl.Size = UDim2.new(0.5, -20, 0, 14)
+	buffValueLbl.Position = UDim2.new(0.5, -20, 0, 80)
+	buffValueLbl.BackgroundTransparency = 1
+	buffValueLbl.Font = Enum.Font.GothamBold
+	buffValueLbl.TextSize = 10
+	buffValueLbl.TextColor3 = GOLD_COLOR
+	buffValueLbl.TextXAlignment = Enum.TextXAlignment.Left
+	buffValueLbl.Text = "Buff: +5.0%"
+	buffValueLbl.ZIndex = 33
+	buffValueLbl.Parent = card
+
+	-- Equip / Unequip button
+	local equipBtn = Instance.new("TextButton")
+	equipBtn.Name = "EquipBtn"
+	equipBtn.Size = UDim2.fromOffset(96, 30)
+	equipBtn.Position = UDim2.new(1, -108, 0, 16)
+	equipBtn.BackgroundColor3 = color
+	equipBtn.BorderSizePixel = 0
+	equipBtn.Font = Enum.Font.GothamBold
+	equipBtn.TextSize = 13
+	equipBtn.TextColor3 = TEXT_COLOR
+	equipBtn.Text = "Equip"
+	equipBtn.AutoButtonColor = false
+	equipBtn.ZIndex = 33
+	equipBtn.Parent = card
+	do
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 6)
+		c.Parent = equipBtn
+	end
+
+	-- Rebirth button (only visible at max level)
+	local rebirthBtn = Instance.new("TextButton")
+	rebirthBtn.Name = "RebirthBtn"
+	rebirthBtn.Size = UDim2.fromOffset(96, 24)
+	rebirthBtn.Position = UDim2.new(1, -108, 0, 54)
+	rebirthBtn.BackgroundColor3 = Color3.fromRGB(180, 140, 20)
+	rebirthBtn.BorderSizePixel = 0
+	rebirthBtn.Font = Enum.Font.GothamBold
+	rebirthBtn.TextSize = 11
+	rebirthBtn.TextColor3 = TEXT_COLOR
+	rebirthBtn.Text = "Rebirth"
+	rebirthBtn.AutoButtonColor = false
+	rebirthBtn.Visible = false
+	rebirthBtn.ZIndex = 33
+	rebirthBtn.Parent = card
+	do
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 6)
+		c.Parent = rebirthBtn
+	end
+
+	equipBtn.MouseEnter:Connect(function()
+		TweenService:Create(equipBtn, TweenInfo.new(0.12), {BackgroundColor3 = hoverColor}):Play()
+		TweenService:Create(cardStroke, TweenInfo.new(0.12), {Transparency = 0}):Play()
 	end)
-	selectBtn.MouseLeave:Connect(function()
-		if factionChosen then return end
-		TweenService:Create(selectBtn, TweenInfo.new(0.15), {BackgroundColor3 = color}):Play()
-		TweenService:Create(cardStroke, TweenInfo.new(0.15), {Transparency = 0.5}):Play()
+	equipBtn.MouseLeave:Connect(function()
+		TweenService:Create(equipBtn, TweenInfo.new(0.12), {BackgroundColor3 = color}):Play()
+		TweenService:Create(cardStroke, TweenInfo.new(0.12), {Transparency = 0.5}):Play()
+	end)
+	equipBtn.MouseButton1Click:Connect(function()
+		if not EquipTitleRemote then
+			warn("[HUDController] EquipTitle remote missing; cannot equip title " .. tostring(titleId))
+			return
+		end
+		local isEquipped = (cachedEquippedTitle == titleId)
+		if not isEquipped then
+			hudLog("EquipTitle requested: " .. tostring(titleId))
+			EquipTitleRemote:FireServer(titleId, false)
+		else
+			hudLog("EquipTitle ignored because title is already equipped: " .. tostring(titleId))
+		end
 	end)
 
-	selectBtn.MouseButton1Click:Connect(function()
-		if factionChosen then return end
-		factionChosen = true
-		selectBtn.Text = "Choosing..."
-		ChooseFactionRemote:FireServer(name)
+	rebirthBtn.MouseEnter:Connect(function()
+		TweenService:Create(rebirthBtn, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(220, 170, 30)}):Play()
+	end)
+	rebirthBtn.MouseLeave:Connect(function()
+		TweenService:Create(rebirthBtn, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(180, 140, 20)}):Play()
+	end)
+	rebirthBtn.MouseButton1Click:Connect(function()
+		if TitleRebirthRemote then
+			hudLog("TitleRebirth requested: " .. tostring(titleId))
+			TitleRebirthRemote:FireServer(titleId)
+		else
+			warn("[HUDController] TitleRebirth remote missing; cannot rebirth title " .. tostring(titleId))
+		end
 	end)
 
-	return {Card = card, SelectBtn = selectBtn, Stroke = cardStroke}
+	titleCardRefs[titleId] = {
+		Card = card, Stroke = cardStroke,
+		XPFill = titleXPFill, XPLabel = xpLbl,
+		BuffValue = buffValueLbl, EquipBtn = equipBtn, RebirthBtn = rebirthBtn,
+		Color = color,
+	}
 end
 
-local _slayerCard = createFactionCard(
-	"Slayer", "SLAYER",
-	"Protectors of humanity. Master breathing techniques to slay demons.",
-	"• Breathing Style skills\n• Balanced stats\n• Katana combat",
-	SLAYER_COLOR, SLAYER_HOVER, 30
-)
+local function getTitleList()
+	if not TitleModule then return {} end
+	if TitleModule.getAllTitles then
+		return TitleModule.getAllTitles()
+	end
+	local titles = {}
+	for _, title in pairs(TitleModule.TITLES or {}) do
+		table.insert(titles, title)
+	end
+	table.sort(titles, function(a, b)
+		return (a.Name or a.Id) < (b.Name or b.Id)
+	end)
+	return titles
+end
 
-local _demonCard = createFactionCard(
-	"Demon", "DEMON",
-	"Embrace the darkness. Gain demonic blood arts and supernatural power.",
-	"• Blood Demon Arts\n• Higher base power\n• Regeneration abilities",
-	DEMON_COLOR, DEMON_HOVER, 270
-)
+local function rebuildTitleRows()
+	for _, child in titleListFrame:GetChildren() do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+	titleCardRefs = {}
 
-local factionPromptShowing = false
+	local titles = getTitleList()
+	if #titles == 0 then
+		warn("[HUDController] Title list is empty; title panel has no selectable rows")
+		return
+	end
 
-local NORMAL_DISPLAY_ORDER = 5
-local MODAL_DISPLAY_ORDER = 100
+	for index, titleDef in ipairs(titles) do
+		if titleDef.Id then
+			createTitleRow(titleDef.Id, index)
+		else
+			warn("[HUDController] Skipping title with missing Id at title list index " .. tostring(index))
+		end
+	end
+	hudLog("Title list rebuilt: " .. tostring(#titles) .. " titles")
+end
 
-local function showFactionSelect()
-	if factionChosen then return end
-	if factionPromptShowing then return end
-	factionPromptShowing = true
+local function refreshTitleCards()
+	if not TitleModule then return end
+	for titleId, refs in titleCardRefs do
+		local titleDef = TitleModule.getTitle(titleId)
+		if not titleDef then continue end
+
+		local isEquipped = (cachedEquippedTitle == titleId)
+		local td = cachedTitles[titleId]
+		local level = td and (td.Level or 0) or 0
+		local xp = td and (td.XP or 0) or 0
+		local xpNeeded = TitleModule.xpForLevel(titleId, math.max(level, 1))
+		local rebirthCount = td and (td.RebirthCount or 0) or 0
+		local buff = TitleModule.computeBuff(titleId, math.max(level, 1), rebirthCount)
+
+		local ratio = level >= titleDef.MaxLevel and 1 or math.clamp(xp / math.max(xpNeeded, 1), 0, 1)
+		TweenService:Create(refs.XPFill, TweenInfo.new(0.3), {Size = UDim2.fromScale(ratio, 1)}):Play()
+		refs.XPLabel.Text = level >= titleDef.MaxLevel
+			and ("Lv " .. level .. " — MAX")
+			or ("Lv " .. level .. " — " .. xp .. " / " .. xpNeeded .. " XP")
+		refs.BuffValue.Text = string.format("Buff: +%.1f%%  |  Rebirth x%d", buff * 100, rebirthCount)
+
+		refs.RebirthBtn.Visible = (level >= titleDef.MaxLevel and isEquipped)
+
+		if isEquipped then
+			refs.EquipBtn.Text = "Equipped"
+			refs.EquipBtn.BackgroundColor3 = Color3.fromRGB(50, 55, 70)
+			TweenService:Create(refs.Stroke, TweenInfo.new(0.2), {Transparency = 0}):Play()
+		else
+			refs.EquipBtn.Text = "Equip"
+			refs.EquipBtn.BackgroundColor3 = refs.Color
+			TweenService:Create(refs.Stroke, TweenInfo.new(0.2), {Transparency = 0.5}):Play()
+		end
+	end
+end
+
+showTitlePanel = function()
+	if not TitleModule then
+		warn("[HUDController] Title panel requested before TitleModule loaded")
+		return
+	end
+	if titlePanelShowing then return end
+	titlePanelShowing = true
+	rebuildTitleRows()
+	refreshTitleCards()
+	hudLog("Title panel opened")
 	screenGui.DisplayOrder = MODAL_DISPLAY_ORDER
 	factionOverlay.Visible = true
-	factionPanel.Size = UDim2.fromOffset(520, 0)
+	factionPanel.Size = UDim2.fromOffset(620, 0)
 	factionPanel.BackgroundTransparency = 1
-	TweenService:Create(factionPanel, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-		Size = UDim2.fromOffset(520, 340),
+	TweenService:Create(factionPanel, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Size = UDim2.fromOffset(620, 440),
 		BackgroundTransparency = 0.05,
 	}):Play()
-	TweenService:Create(factionOverlay, TweenInfo.new(0.3), {BackgroundTransparency = 0.35}):Play()
+	TweenService:Create(factionOverlay, TweenInfo.new(0.25), {BackgroundTransparency = 0.35}):Play()
 end
 
-local function hideFactionSelect(chosenFaction)
-	local flashColor = chosenFaction == "Slayer" and SLAYER_COLOR or DEMON_COLOR
-	factionPanel.BackgroundColor3 = flashColor
-	TweenService:Create(factionPanel, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+hideTitlePanel = function()
+	if not titlePanelShowing then return end
+	hudLog("Title panel closing")
+	TweenService:Create(factionPanel, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(520, 0),
+		Size = UDim2.fromOffset(620, 0),
 	}):Play()
-	TweenService:Create(factionOverlay, TweenInfo.new(0.4), {BackgroundTransparency = 1}):Play()
-	task.delay(0.55, function()
+	TweenService:Create(factionOverlay, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
+	task.delay(0.25, function()
 		factionOverlay.Visible = false
-		factionPromptShowing = false
+		titlePanelShowing = false
 		screenGui.DisplayOrder = NORMAL_DISPLAY_ORDER
 	end)
 end
 
-local factionConfirmSound = Instance.new("Sound")
-factionConfirmSound.Name = "FactionConfirmSound"
-factionConfirmSound.SoundId = "rbxassetid://9125402735"
-factionConfirmSound.Volume = 0.7
-factionConfirmSound.Parent = SoundService
+local titleConfirmSound = Instance.new("Sound")
+titleConfirmSound.Name = "TitleConfirmSound"
+titleConfirmSound.SoundId = "rbxassetid://9125402735"
+titleConfirmSound.Volume = 0.7
+titleConfirmSound.Parent = SoundService
 
 ShowFactionSelectRemote.OnClientEvent:Connect(function()
-	factionChosen = false
-	showFactionSelect()
+	showTitlePanel()
 end)
 
-FactionChosenRemote.OnClientEvent:Connect(function(faction)
-	factionConfirmSound:Play()
-	hideFactionSelect(faction)
+FactionChosenRemote.OnClientEvent:Connect(function(_faction)
+	titleConfirmSound:Play()
+	hideTitlePanel()
 end)
+
+if InventoryChangedRemote then
+	InventoryChangedRemote.OnClientEvent:Connect(function(inventory, equippedStyle)
+		cachedInventory = typeof(inventory) == "table" and inventory or {}
+		cachedEquippedStyle = typeof(equippedStyle) == "string" and equippedStyle or cachedEquippedStyle
+		updateInventoryIconBadge()
+		hudLog("InventoryChanged received: items=" .. tostring(#cachedInventory) .. ", style=" .. tostring(cachedEquippedStyle))
+		if invPanelOpen then
+			rebuildInventoryPanel()
+		end
+	end)
+end
+
+if StyleChangedRemote then
+	StyleChangedRemote.OnClientEvent:Connect(function(style)
+		cachedEquippedStyle = typeof(style) == "string" and style or cachedEquippedStyle
+		hudLog("StyleChanged received: style=" .. tostring(cachedEquippedStyle))
+	end)
+end
+
+local TitleChangedRemote = Remotes:FindFirstChild("TitleChanged")
+if TitleChangedRemote then
+	TitleChangedRemote.OnClientEvent:Connect(function(titleId, titleData, equippedTitle)
+		if typeof(titleId) == "string" and typeof(titleData) == "table" then
+			cachedTitles[titleId] = titleData
+		end
+		if typeof(equippedTitle) == "string" then
+			cachedEquippedTitle = equippedTitle
+		end
+		hudLog("TitleChanged received: title=" .. tostring(titleId) .. ", equipped=" .. tostring(cachedEquippedTitle))
+		if titlePanelShowing then
+			refreshTitleCards()
+		end
+	end)
+end
+
+task.spawn(function()
+	local GetPlayerData = Remotes:FindFirstChild("GetPlayerData")
+	if not GetPlayerData then return end
+	local ok, result = pcall(function()
+		return GetPlayerData:InvokeServer()
+	end)
+	if not (ok and result and typeof(result) == "table") then
+		return
+	end
+	if typeof(result.Inventory) == "table" then
+		cachedInventory = result.Inventory
+	end
+	updateInventoryIconBadge()
+	cachedEquippedStyle = result.EquippedStyle or ""
+	cachedEquippedTitle = result.EquippedTitle or ""
+	if typeof(result.Titles) == "table" then
+		cachedTitles = result.Titles
+	end
+	hudLog(
+		"Initial player data: level=" .. tostring(result.Level)
+			.. ", faction=" .. tostring(result.Faction)
+			.. ", title=" .. tostring(cachedEquippedTitle)
+			.. ", style=" .. tostring(cachedEquippedStyle)
+			.. ", needsTitleSelection=" .. tostring(result.NeedsTitleSelection)
+			.. ", inventory=" .. tostring(typeof(result.Inventory) == "table" and #result.Inventory or 0)
+	)
+	if result.NeedsTitleSelection or cachedEquippedTitle == "" then
+		task.defer(function()
+			hudLog("Initial player data requested title panel")
+			showTitlePanel()
+		end)
+	end
+end)
+
+end
+
+initTitleSelectionUI()
 
 -- ==================== LUNGE COOLDOWN INDICATOR ====================
+local function initLungeCooldownIndicator()
 local lungeFrame = Instance.new("Frame")
 lungeFrame.Name = "LungeCooldown"
 lungeFrame.Size = UDim2.fromOffset(44, 44)
@@ -1831,9 +2483,12 @@ updateStamina(100, 100)
 updateStats(1, 0, 100, 0)
 updateHUDPrompts()
 updateStatIconPulse()
+end
+
+initLungeCooldownIndicator()
 
 -- ==================== MASTERY BAR SYSTEM ====================
-do
+local function initMasteryBarSystem()
 	local currentMasteryFaction = ""
 	local currentMasteryStyleId = ""
 	local currentMasteryLevel = 0
@@ -1844,8 +2499,9 @@ do
 	local MASTERY_FLASH_TWEEN = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 	local function getActiveStyleFromSkills(faction)
+		local lookup = (cachedEquippedStyle ~= "" and cachedEquippedStyle) or faction
 		for _, slot in {"Q", "E", "R", "F", "V"} do
-			local skill = SkillSystemModule.getSkillForSlot(faction, slot)
+			local skill = SkillSystemModule.getSkillForSlot(lookup, slot)
 			if skill then
 				return skill.Id
 			end
@@ -1875,7 +2531,20 @@ do
 		local skill = SkillSystemModule.getSkill(currentMasteryStyleId)
 		local displayName = currentMasteryStyleId
 		if skill then
-			if skill.Faction == "Slayer" then
+			local style = skill.Style or ""
+			if style == "FlameBreathing" then
+				displayName = "Flame Breath"
+				local flameColor1 = Color3.fromRGB(255, 100, 20)
+				local flameColor2 = Color3.fromRGB(200, 50, 10)
+				masteryFill.BackgroundColor3 = flameColor1
+				masteryFillGradient.Color = ColorSequence.new(flameColor1, flameColor2)
+			elseif style == "TemariDemonArts" then
+				displayName = "Temari Art"
+				local temariColor1 = Color3.fromRGB(200, 60, 220)
+				local temariColor2 = Color3.fromRGB(130, 20, 170)
+				masteryFill.BackgroundColor3 = temariColor1
+				masteryFillGradient.Color = ColorSequence.new(temariColor1, temariColor2)
+			elseif skill.Faction == "Slayer" then
 				displayName = "Water Breath"
 				masteryFill.BackgroundColor3 = MASTERY_BREATH_COLOR1
 				masteryFillGradient.Color = ColorSequence.new(MASTERY_BREATH_COLOR1, MASTERY_BREATH_COLOR2)
@@ -1941,6 +2610,21 @@ do
 		updateMasteryBarUI()
 	end)
 
+	if StyleChangedRemote then
+		StyleChangedRemote.OnClientEvent:Connect(function(style)
+			if typeof(style) ~= "string" or style == "" then return end
+			local activeStyle = getActiveStyleFromSkills(currentMasteryFaction)
+			if activeStyle ~= "" then
+				currentMasteryStyleId = activeStyle
+				masteryEquipped = true
+				currentMasteryLevel = 0
+				currentMasteryXP = 0
+				currentMasteryXPNeeded = 100
+				updateMasteryBarUI()
+			end
+		end)
+	end
+
 	task.spawn(function()
 		local GetPlayerData = Remotes:FindFirstChild("GetPlayerData")
 		if GetPlayerData then
@@ -1948,6 +2632,12 @@ do
 				return GetPlayerData:InvokeServer()
 			end)
 			if ok and result and typeof(result) == "table" then
+				hudLog(
+					"Mastery player data: faction=" .. tostring(result.Faction)
+						.. ", title=" .. tostring(result.EquippedTitle)
+						.. ", style=" .. tostring(result.EquippedStyle)
+						.. ", needsTitleSelection=" .. tostring(result.NeedsTitleSelection)
+				)
 				if result.Faction and result.Faction ~= "" then
 					currentMasteryFaction = result.Faction
 					local activeStyle = getActiveStyleFromSkills(result.Faction)
@@ -1961,11 +2651,9 @@ do
 							currentMasteryXPNeeded = math.floor(100 * ((m.Level or 1) ^ 1.3))
 						end
 					end
-				elseif result.Level then
-					print("[HUDController] No faction set — showing faction select from client-side check")
-					factionChosen = false
-					factionPromptShowing = false
-					showFactionSelect()
+				elseif result.NeedsTitleSelection or result.Level then
+					hudLog("No faction set; showing title panel from client-side check")
+					showTitlePanel()
 				end
 				updateMasteryBarUI()
 			end
@@ -1974,5 +2662,7 @@ do
 
 	updateMasteryBarUI()
 end
+
+initMasteryBarSystem()
 
 print("[HUDController] Loaded")

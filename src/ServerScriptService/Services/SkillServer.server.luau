@@ -60,6 +60,16 @@ local function applySkillDamage(player, skill, hitIndex)
 		end
 	end
 
+	-- Award title XP for each enemy hit
+	if #hitCharacters > 0 then
+		local data = PlayerDataModule.getData(player)
+		local equippedTitle = data and (data.EquippedTitle or "")
+		if equippedTitle ~= "" then
+			local xpPerHit = math.floor(10 + skill.BaseDamage * 0.1)
+			PlayerDataModule.addTitleXP(player, equippedTitle, xpPerHit * #hitCharacters)
+		end
+	end
+
 	return #hitCharacters, damage
 end
 
