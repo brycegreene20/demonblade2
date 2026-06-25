@@ -96,7 +96,7 @@ Players.PlayerAdded:Connect(function(player)
 	applyLoadedData(player)
 
 	local data = PlayerDataModule.getData(player)
-	if data and (data.Faction == nil or data.Faction == "") then
+	if data and PlayerDataModule.needsTitleSelection(player) then
 		task.spawn(function()
 			if not player.Parent then return end
 			local char = player.Character or player.CharacterAdded:Wait()
@@ -109,8 +109,7 @@ Players.PlayerAdded:Connect(function(player)
 			print("[MovementServer] Faction not set for " .. player.Name .. " — character frozen, showing faction prompt")
 			task.wait(2)
 			if not player.Parent then return end
-			local currentData = PlayerDataModule.getData(player)
-			if currentData and (currentData.Faction == nil or currentData.Faction == "") then
+			if PlayerDataModule.needsTitleSelection(player) then
 				ShowFactionSelectRemote:FireClient(player)
 				print("[MovementServer] Sent ShowFactionSelect to " .. player.Name)
 			end
@@ -133,10 +132,16 @@ local function setIFrames(character, enabled)
 			part.CanCollide = not enabled
 		end
 	end
+	-- PlatformStand prevents the Humanoid's auto-balance physics from tripping
+	-- the character when passing through enemy bodies at high speed.
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.PlatformStand = enabled
+	end
 	local forceField = character:FindFirstChildOfClass("ForceField")
 	if enabled and not forceField then
 		local ff = Instance.new("ForceField")
-		ff.Visible = true
+		ff.Visible = false
 		ff.Name = "LungeIFrame"
 		ff.Parent = character
 	elseif not enabled and forceField and forceField.Name == "LungeIFrame" then
@@ -239,16 +244,32 @@ end)
 GetPlayerDataRemote.OnServerInvoke = function(player)
 	local data = PlayerDataModule.getData(player)
 	if not data then return {} end
+	local needsTitleSelection = PlayerDataModule.needsTitleSelection(player)
 	local StatConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("StatConfig"))
 	local result = {
 		Level = data.Level,
 		XP = data.XP,
 		Faction = data.Faction,
 		StatPoints = data.StatPoints,
+		EquippedStyle = data.EquippedStyle or "",
+		EquippedTitle = data.EquippedTitle or "",
+		NeedsTitleSelection = needsTitleSelection,
+		Titles = data.Titles or {},
+		Inventory = data.Inventory or {},
+		Mastery = data.Mastery or {},
 	}
 	for _, key in ipairs(StatConfig.STAT_KEYS) do
 		result[key] = data[key] or 0
 	end
+	print(
+		"[MovementServer:GetPlayerData] "
+			.. player.Name
+			.. " title=" .. tostring(result.EquippedTitle)
+			.. " faction=" .. tostring(result.Faction)
+			.. " style=" .. tostring(result.EquippedStyle)
+			.. " needsTitleSelection=" .. tostring(result.NeedsTitleSelection)
+			.. " inventoryCount=" .. tostring(#result.Inventory)
+	)
 	return result
 end
 

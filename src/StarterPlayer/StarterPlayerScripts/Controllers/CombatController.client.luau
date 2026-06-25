@@ -13,6 +13,8 @@ local DamageDealt = Remotes:WaitForChild("DamageDealt")
 local UseSkillRemote = Remotes:WaitForChild("UseSkill")
 local SkillActivatedRemote = Remotes:WaitForChild("SkillActivated")
 local FactionChosenRemote = Remotes:WaitForChild("FactionChosen")
+local StyleChangedRemote = Remotes:WaitForChild("StyleChanged")
+local InventoryChangedRemote = Remotes:WaitForChild("InventoryChanged")
 local BlockRemote = Remotes:WaitForChild("Block")
 local ParryAttemptRemote = Remotes:WaitForChild("ParryAttempt")
 local BlockParryVFXRemote = Remotes:WaitForChild("BlockParryVFX")
@@ -256,6 +258,8 @@ end)
 
 -- ==================== SKILL SYSTEM ====================
 local _currentFaction = ""
+local _currentStyle = ""
+local _clientInventory = {}
 local skillSlots = {}
 local skillCooldownExpiry = {}
 local isUsingSkill = false
@@ -288,6 +292,12 @@ local SKILL_VFX_COLORS = {
 	DemonAwakening = Color3.fromRGB(120, 0, 180),
 	WaterDragon = Color3.fromRGB(0, 120, 255),
 	BloodMoon = Color3.fromRGB(140, 0, 30),
+	FlameFirst = Color3.fromRGB(255, 100, 20),
+	FlameSecond = Color3.fromRGB(255, 140, 0),
+	FlameThird = Color3.fromRGB(255, 60, 10),
+	FlameFourth = Color3.fromRGB(255, 80, 0),
+	FlameEsoteric = Color3.fromRGB(255, 200, 30),
+	FlameFifth = Color3.fromRGB(255, 120, 10),
 }
 
 local function buildSkillSlots(faction)
@@ -302,7 +312,12 @@ end
 
 local function setFaction(faction)
 	_currentFaction = faction
-	buildSkillSlots(faction)
+	buildSkillSlots(_currentStyle ~= "" and _currentStyle or faction)
+end
+
+local function setStyle(style)
+	_currentStyle = style
+	buildSkillSlots(style ~= "" and style or _currentFaction)
 end
 
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -1793,6 +1808,302 @@ local function vfxWaterDragon(hrp)
 	end)
 end
 
+local function vfxFlameSlash(hrp, color, skill)
+	local colorGlow = Color3.fromRGB(255, 200, 50)
+	spawnScreenFlash(0.12, color)
+
+	local chargePart = makeInvisPart("FlameCharge", hrp.CFrame * CFrame.new(0, 0, -2))
+	cloneParticleSet("Charge-01", chargePart, 0.3, color)
+	cloneParticleSet("Shiny-01", chargePart, 0.3, colorGlow)
+	Debris:AddItem(chargePart, 1.5)
+
+	local hitCount = skill.MultiHit or 1
+	local delay = skill.MultiHitDelay or 0.12
+	for i = 1, hitCount do
+		task.delay((i - 1) * delay, function()
+			if not hrp or not hrp.Parent then return end
+			local angle = math.rad((i - 1) * (360 / hitCount))
+			local zOff = -3 - (i * 1.5)
+
+			local slash = Instance.new("Part")
+			slash.Name = "FlameSlash"
+			slash.Size = Vector3.new(0.15, 5, 5)
+			slash.Anchored = true
+			slash.CanCollide = false
+			slash.CanQuery = false
+			slash.CanTouch = false
+			slash.CastShadow = false
+			slash.Material = Enum.Material.Neon
+			slash.Color = color
+			slash.Transparency = 0.1
+			slash.CFrame = hrp.CFrame * CFrame.new(0, 0, zOff) * CFrame.Angles(0, 0, angle)
+			slash.Parent = workspace
+			TweenService:Create(slash, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Transparency = 1,
+				Size = Vector3.new(0.05, 8, 8),
+			}):Play()
+			Debris:AddItem(slash, 0.35)
+
+			local embr = VFXAssets:FindFirstChild("Shockwave") and VFXAssets:FindFirstChild("Shockwave"):Clone()
+			if embr then
+				prepMesh(embr, colorGlow, 0.1, Vector3.new(3, 1, 3), hrp.CFrame * CFrame.new(0, -1, zOff))
+				TweenService:Create(embr, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Size = Vector3.new(10 + i * 2, 2, 10 + i * 2),
+					Transparency = 1,
+				}):Play()
+				Debris:AddItem(embr, 0.45)
+			end
+
+			local impactPart = makeInvisPart("FlameImpact" .. i, hrp.CFrame * CFrame.new(0, 0, zOff))
+			cloneParticleSet("Charge-01", impactPart, 0.25, color)
+			Debris:AddItem(impactPart, 1.2)
+		end)
+	end
+
+	spawnGroundRing(hrp, color, 0.5)
+	heavyCameraShake(0.4, 6, 0.02)
+end
+
+local function vfxFlameEsoteric(hrp)
+	local colorCore = Color3.fromRGB(255, 200, 30)
+	local colorFlame = Color3.fromRGB(255, 80, 10)
+	local colorWhite = Color3.fromRGB(255, 240, 200)
+
+	spawnScreenFlash(0.3, colorCore)
+	heavyCameraShake(1.0, 14, 0.03)
+
+	local chargePart = makeInvisPart("FlameEsotericCharge", hrp.CFrame * CFrame.new(0, 0, -3))
+	cloneParticleSet("Charge-01", chargePart, 0.6, colorFlame)
+	cloneParticleSet("Charge-01", chargePart, 0.6, colorCore)
+	cloneParticleSet("Shiny-01", chargePart, 0.5, colorWhite)
+	Debris:AddItem(chargePart, 2.5)
+
+	local ws = VFXAssets:FindFirstChild("WindSphere") and VFXAssets:FindFirstChild("WindSphere"):Clone()
+	if ws then
+		prepMesh(ws, colorCore, 0.05, Vector3.new(4, 4, 4), hrp.CFrame * CFrame.new(0, 0, -4))
+		TweenService:Create(ws, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = Vector3.new(40, 40, 40),
+			Transparency = 1,
+		}):Play()
+		Debris:AddItem(ws, 0.9)
+	end
+
+	local segments = 6
+	for i = 1, segments do
+		task.delay((i - 1) * 0.07, function()
+			if not hrp or not hrp.Parent then return end
+			local zOff = -4 - (i * 6)
+			local yOff = math.sin(i * 0.8) * 3
+			local xOff = math.cos(i * 1.2) * 2.5
+			local segCF = hrp.CFrame * CFrame.new(xOff, yOff, zOff)
+
+			local spiral = VFXAssets:FindFirstChild("Spiral") and VFXAssets:FindFirstChild("Spiral"):Clone()
+			if spiral then
+				prepMesh(spiral, colorFlame, 0.05, Vector3.new(4, 4, 4), segCF)
+				TweenService:Create(spiral, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Size = Vector3.new(16 + i * 0.5, 14 + i * 0.5, 16 + i * 0.5),
+					CFrame = segCF * CFrame.Angles(0, math.rad(540), math.rad(i * 40)),
+					Transparency = 1,
+				}):Play()
+				Debris:AddItem(spiral, 0.6)
+			end
+
+			local segPart = makeInvisPart("FlameEsotericSeg" .. i, segCF)
+			cloneParticleSet("Charge-01", segPart, 0.3, colorFlame)
+			if i % 2 == 0 then
+				cloneParticleSet("Shiny-01", segPart, 0.25, colorCore)
+			end
+			Debris:AddItem(segPart, 1.8)
+
+			if i == segments then
+				task.delay(0.06, function()
+					if not hrp or not hrp.Parent then return end
+					local headCF = hrp.CFrame * CFrame.new(0, 0, -4 - segments * 6 - 4)
+
+					spawnTanjiroSlash(headCF, Vector3.new(26, 20, 26), colorFlame, 0, 0.9)
+
+					local sw1 = VFXAssets:FindFirstChild("Shockwave") and VFXAssets:FindFirstChild("Shockwave"):Clone()
+					if sw1 then
+						prepMesh(sw1, colorCore, 0.08, Vector3.new(8, 2, 8), headCF * CFrame.new(0, -2, 0))
+						TweenService:Create(sw1, TweenInfo.new(0.75, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+							Size = Vector3.new(44, 6, 44),
+							Transparency = 1,
+						}):Play()
+						Debris:AddItem(sw1, 0.85)
+					end
+
+					local impactPart = makeInvisPart("FlameEsotericImpact", headCF)
+					cloneParticleSet("Charge-01", impactPart, 0.5, colorFlame)
+					cloneParticleSet("Shiny-01", impactPart, 0.45, colorCore)
+					cloneSubParticles("Slashes-01", "Main", impactPart, 0.4, colorFlame)
+					cloneSubParticles("Slashes-01", "Bottom", impactPart, 0.4, colorCore)
+					Debris:AddItem(impactPart, 2.8)
+
+					spawnScreenFlash(0.2, colorWhite)
+					heavyCameraShake(1.2, 16, 0.03)
+					spawnGroundRing(hrp, colorFlame, 1.0)
+					task.delay(0.2, function()
+						if hrp and hrp.Parent then
+							spawnGroundRing(hrp, colorCore, 0.7)
+						end
+					end)
+				end)
+			end
+		end)
+	end
+
+	spawnGroundRing(hrp, colorFlame, 0.8)
+end
+
+local FLAME_SKILL_VFX = {
+	FlameEsoteric = vfxFlameEsoteric,
+}
+
+local function spawnFlameVFX(hrp, skillId, skill)
+	local handler = FLAME_SKILL_VFX[skillId]
+	if handler then
+		handler(hrp)
+	else
+		local color = SKILL_VFX_COLORS[skillId] or Color3.fromRGB(255, 100, 20)
+		vfxFlameSlash(hrp, color, skill)
+	end
+end
+
+-- ==================== TEMARI DEMON ARTS VFX ====================
+local TEMARI_COLOR1 = Color3.fromRGB(200, 60, 220)
+local TEMARI_COLOR2 = Color3.fromRGB(255, 100, 255)
+local TEMARI_GLOW   = Color3.fromRGB(220, 120, 255)
+
+local function vfxTemariBall(hrp, count, spread)
+	count = count or 1
+	spread = spread or 0
+	spawnScreenFlash(0.08, TEMARI_COLOR1)
+	for i = 1, count do
+		task.spawn(function()
+			local ball = Instance.new("Part")
+			ball.Shape = Enum.PartType.Ball
+			ball.Size = Vector3.new(1.4, 1.4, 1.4)
+			ball.Material = Enum.Material.Neon
+			ball.Color = TEMARI_COLOR2
+			ball.CastShadow = false
+			ball.CanCollide = false
+			ball.Anchored = true
+
+			local angle = math.rad((i - 1) * (spread / math.max(count - 1, 1)) - spread / 2)
+			local fwd = hrp.CFrame.LookVector
+			local right = hrp.CFrame.RightVector
+			local dir = (fwd * math.cos(angle) + right * math.sin(angle)).Unit
+			ball.CFrame = CFrame.new(hrp.Position + dir * 2 + Vector3.new(0, 0.5, 0))
+			ball.Parent = workspace
+
+			local trail = Instance.new("SelectionBox")
+			trail.Color3 = TEMARI_COLOR1
+			trail.LineThickness = 0.04
+			trail.Adornee = ball
+			trail.Parent = workspace
+
+			local steps = 16
+			for s = 1, steps do
+				if not ball.Parent then break end
+				ball.CFrame = ball.CFrame + dir * (s * 0.18)
+				ball.Size = Vector3.new(1.4 - s * 0.04, 1.4 - s * 0.04, 1.4 - s * 0.04)
+				task.wait(0.03)
+			end
+			trail:Destroy()
+			ball:Destroy()
+		end)
+		task.wait(0.06)
+	end
+end
+
+local function vfxTemariExplosion(hrp)
+	spawnScreenFlash(0.18, TEMARI_GLOW)
+	for ring = 1, 3 do
+		task.spawn(function()
+			task.wait((ring - 1) * 0.08)
+			local shockwave = Instance.new("Part")
+			shockwave.Name = "TemariShockwave"
+			shockwave.Shape = Enum.PartType.Ball
+			shockwave.Size = Vector3.new(ring * 2, ring * 2, ring * 2)
+			shockwave.Material = Enum.Material.Neon
+			shockwave.Color = TEMARI_COLOR1
+			shockwave.Transparency = 0.3
+			shockwave.CanCollide = false
+			shockwave.Anchored = true
+			shockwave.CFrame = CFrame.new(hrp.Position)
+			shockwave.Parent = workspace
+
+			TweenService:Create(shockwave, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Size = Vector3.new(ring * 9, ring * 9, ring * 9),
+				Transparency = 1,
+			}):Play()
+			Debris:AddItem(shockwave, 0.5)
+		end)
+	end
+end
+
+local function vfxTemariFullMoon(hrp)
+	spawnScreenFlash(0.22, TEMARI_GLOW)
+	local orbitRadius = 5
+	local armCount = 6
+	for arm = 1, armCount do
+		task.spawn(function()
+			task.wait((arm - 1) * 0.1)
+			local angle = math.rad((arm - 1) * (360 / armCount))
+			local offset = Vector3.new(math.cos(angle) * orbitRadius, 0.5, math.sin(angle) * orbitRadius)
+
+			local orb = Instance.new("Part")
+			orb.Shape = Enum.PartType.Ball
+			orb.Size = Vector3.new(2, 2, 2)
+			orb.Material = Enum.Material.Neon
+			orb.Color = TEMARI_COLOR2
+			orb.CanCollide = false
+			orb.Anchored = true
+			orb.CFrame = CFrame.new(hrp.Position + offset)
+			orb.Parent = workspace
+
+			local inner = Instance.new("Part")
+			inner.Shape = Enum.PartType.Ball
+			inner.Size = Vector3.new(0.8, 0.8, 0.8)
+			inner.Material = Enum.Material.Neon
+			inner.Color = Color3.new(1, 1, 1)
+			inner.CanCollide = false
+			inner.Anchored = true
+			inner.CFrame = orb.CFrame
+			inner.Parent = workspace
+
+			for t = 1, 14 do
+				if not orb.Parent then break end
+				local a = angle + math.rad(t * 18)
+				local pos = hrp.Position + Vector3.new(math.cos(a) * orbitRadius * (1 - t * 0.06), 0.5, math.sin(a) * orbitRadius * (1 - t * 0.06))
+				orb.CFrame = CFrame.new(pos)
+				inner.CFrame = orb.CFrame
+				task.wait(0.04)
+			end
+
+			TweenService:Create(orb, TweenInfo.new(0.2), {Size = Vector3.new(5, 5, 5), Transparency = 1}):Play()
+			inner:Destroy()
+			Debris:AddItem(orb, 0.25)
+		end)
+	end
+end
+
+local TEMARI_SKILL_VFX = {
+	BloodTemari   = function(hrp, _skill) vfxTemariExplosion(hrp) end,
+	TemariFullMoon = function(hrp, _skill) vfxTemariFullMoon(hrp) end,
+	DoubleTemari  = function(hrp, _skill) vfxTemariBall(hrp, 2, 40) end,
+	TemariBarrage = function(hrp, _skill) vfxTemariBall(hrp, 5, 60) end,
+}
+
+local function spawnTemariVFX(hrp, skillId, _skill)
+	local handler = TEMARI_SKILL_VFX[skillId]
+	if handler then
+		handler(hrp, _skill)
+	else
+		vfxTemariBall(hrp, 1, 0)
+	end
+end
+
 local function spawnDemonVFXGeneric(hrp, _skillId, color, skill)
 	if skill.MultiHit > 1 and skill.HitboxOffset > 0 then
 		for i = 1, skill.MultiHit do
@@ -1862,9 +2173,20 @@ local function spawnSkillVFX(character, skillId)
 		return
 	end
 
-	local color = SKILL_VFX_COLORS[skillId] or Color3.fromRGB(200, 200, 255)
 	local skill = SkillSystemModule.getSkill(skillId)
 	if not skill then return end
+
+	if skill.Style == "FlameBreathing" then
+		spawnFlameVFX(hrp, skillId, skill)
+		return
+	end
+
+	if skill.Style == "TemariDemonArts" then
+		spawnTemariVFX(hrp, skillId, skill)
+		return
+	end
+
+	local color = SKILL_VFX_COLORS[skillId] or Color3.fromRGB(200, 200, 255)
 	spawnDemonVFXGeneric(hrp, skillId, color, skill)
 end
 
@@ -1958,15 +2280,38 @@ FactionChosenRemote.OnClientEvent:Connect(function(faction)
 	updateSkillBarUI()
 end)
 
+StyleChangedRemote.OnClientEvent:Connect(function(style)
+	setStyle(style or "")
+	updateSkillBarUI()
+end)
+
+InventoryChangedRemote.OnClientEvent:Connect(function(inventory, equippedStyle)
+	_clientInventory = typeof(inventory) == "table" and inventory or {}
+	if typeof(equippedStyle) == "string" and equippedStyle ~= "" and equippedStyle ~= _currentStyle then
+		setStyle(equippedStyle)
+		updateSkillBarUI()
+	end
+end)
+
 task.spawn(function()
 	local GetPlayerData = Remotes:FindFirstChild("GetPlayerData")
 	if GetPlayerData then
 		local ok, result = pcall(function()
 			return GetPlayerData:InvokeServer()
 		end)
-		if ok and result and typeof(result) == "table" and result.Faction and result.Faction ~= "" then
-			setFaction(result.Faction)
-			updateSkillBarUI()
+		if ok and result and typeof(result) == "table" then
+			if result.Faction and result.Faction ~= "" then
+				_currentFaction = result.Faction
+			end
+			if result.Inventory then
+				_clientInventory = result.Inventory
+			end
+			local styleToUse = (result.EquippedStyle and result.EquippedStyle ~= "") and result.EquippedStyle or _currentFaction
+			if styleToUse ~= "" then
+				_currentStyle = result.EquippedStyle or ""
+				buildSkillSlots(styleToUse)
+				updateSkillBarUI()
+			end
 		end
 	end
 end)

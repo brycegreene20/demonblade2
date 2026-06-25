@@ -90,6 +90,11 @@ jobs:
         run: |
           & "$env:SELENE" src
 
+      - name: Run Luau unit tests
+        shell: pwsh
+        run: |
+          & "$env:LUNE" run tests/unit/run.luau
+
       - name: Build Roblox place
         shell: pwsh
         run: |

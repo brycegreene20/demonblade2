@@ -11,6 +11,7 @@ local MasteryChanged = Remotes:FindFirstChild("MasteryChanged")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local StatConfig = require(Modules:WaitForChild("StatConfig"))
+local TitleModule = require(Modules:WaitForChild("TitleModule"))
 
 local PlayerDataModule = {}
 
@@ -44,6 +45,10 @@ PlayerDataModule.DEFAULTS = {
 	Bounty = 0,
 	StatPointsMigrated = false,
 	lastRespecTime = 0,
+	-- New fields
+	EquippedStyle = "",
+	Titles = {},
+	EquippedTitle = "",
 }
 
 local STAT_POINTS_PER_LEVEL = StatConfig.STAT_POINTS_PER_LEVEL
@@ -53,14 +58,91 @@ local SAVE_FIELDS = {
 	"BreathDamage", "DemonArtDamage", "Health", "Defense", "StaminaStat", "MovementSpeed",
 	"StatPoints", "Faction", "Inventory", "RebirthCount", "SkillsUnlocked",
 	"Mastery", "Bounty", "StatPointsMigrated", "lastRespecTime",
+	"EquippedStyle", "Titles", "EquippedTitle",
 }
 
 local playerData = {}
 local staminaRegenTimers = {}
+local DEFAULT_STARTING_TITLE = "DemonSlayer"
+local DEBUG_IDENTITY = true
+
+local function identityLog(message)
+	if DEBUG_IDENTITY then
+		print("[PlayerDataModule:Identity] " .. message)
+	end
+end
 
 local StatsChanged = Remotes:FindFirstChild("StatsChanged")
 local LevelUpRemote = Remotes:FindFirstChild("LevelUp")
 local StatPointsChanged = Remotes:FindFirstChild("StatPointsChanged")
+local TitleChangedRemote = Remotes:FindFirstChild("TitleChanged")
+local StyleChangedRemote = Remotes:FindFirstChild("StyleChanged")
+
+local function getDefaultTitleForFaction(faction)
+	for titleId, title in pairs(TitleModule.TITLES) do
+		if title.Faction == faction then
+			return titleId, title
+		end
+	end
+	return nil, nil
+end
+
+local function applyTitleDerivedFields(data)
+	local titleId = data.EquippedTitle or ""
+	local title = TitleModule.getTitle(titleId)
+	if not title then
+		if titleId ~= "" then
+			identityLog("Unknown title '" .. titleId .. "'; clearing title/faction")
+		end
+		data.EquippedTitle = ""
+		data.Faction = ""
+		return nil
+	end
+
+	if data.Faction ~= title.Faction then
+		identityLog("Derived faction '" .. title.Faction .. "' from title '" .. titleId .. "'")
+	end
+	data.Faction = title.Faction
+	if typeof(data.Titles) ~= "table" then
+		identityLog("Repairing invalid Titles table for title '" .. titleId .. "'")
+		data.Titles = {}
+	end
+	if not data.Titles[titleId] then
+		identityLog("Creating title progression for '" .. titleId .. "'")
+		data.Titles[titleId] = { Level = 1, XP = 0, RebirthCount = 0 }
+	end
+
+	return title
+end
+
+local function grantStartingScrollForTitle(data, title)
+	if not title or not title.StartingScroll then return end
+	local ItemsModule = require(Modules:WaitForChild("ItemsModule"))
+	if not ItemsModule.hasItem(data.Inventory, title.StartingScroll) then
+		identityLog("Granting starting item '" .. title.StartingScroll .. "' for title '" .. title.Id .. "'")
+		table.insert(data.Inventory, title.StartingScroll)
+	end
+
+	local scroll = ItemsModule.getScroll(title.StartingScroll)
+	if scroll and (not data.EquippedStyle or data.EquippedStyle == "") then
+		identityLog("Equipping starting style '" .. scroll.Style .. "' from item '" .. title.StartingScroll .. "'")
+		data.EquippedStyle = scroll.Style
+	end
+end
+
+local function ensurePlayableIdentity(data)
+	local title = TitleModule.getTitle(data.EquippedTitle or "")
+	if not title then
+		identityLog("No valid equipped title; defaulting to '" .. DEFAULT_STARTING_TITLE .. "'")
+		data.EquippedTitle = DEFAULT_STARTING_TITLE
+	end
+
+	title = applyTitleDerivedFields(data)
+	grantStartingScrollForTitle(data, title)
+	return title ~= nil
+end
+
+local fireTitleChanged
 
 function PlayerDataModule.xpForLevel(level)
 	return math.floor(100 * (level ^ 1.4))
@@ -77,6 +159,24 @@ function PlayerDataModule.computeStats(data)
 		damageMultiplier = 1.0 + (data.BreathDamage * 0.03)
 	elseif data.Faction == "Demon" then
 		damageMultiplier = 1.0 + (data.DemonArtDamage * 0.03)
+	end
+
+	-- Title buff adds on top of the base multiplier
+	local equippedTitle = data.EquippedTitle or ""
+	if equippedTitle ~= "" then
+		local titleData = data.Titles and data.Titles[equippedTitle]
+		if titleData then
+			local title = TitleModule.getTitle(equippedTitle)
+			if title then
+				local buff = TitleModule.computeBuff(equippedTitle, titleData.Level or 1, titleData.RebirthCount or 0)
+				-- Only apply breath title buff for slayers, demon buff for demons
+				local factionMatches = (title.BuffType == "BreathDamage" and data.Faction == "Slayer")
+					or (title.BuffType == "DemonArtDamage" and data.Faction == "Demon")
+				if factionMatches then
+					damageMultiplier = damageMultiplier + buff
+				end
+			end
+		end
 	end
 
 	return {
@@ -285,19 +385,27 @@ end
 function PlayerDataModule.setFaction(player, faction)
 	local data = playerData[player]
 	if not data then return false, "No data" end
-	if data.Faction ~= "" then return false, "Faction already chosen" end
 	if faction ~= "Slayer" and faction ~= "Demon" then return false, "Invalid faction" end
-	data.Faction = faction
+
+	local titleId = getDefaultTitleForFaction(faction)
+	if not titleId then return false, "No title for faction" end
+	if data.EquippedTitle ~= "" then return false, "Title already chosen" end
+
+	data.EquippedTitle = titleId
+	local title = applyTitleDerivedFields(data)
+	grantStartingScrollForTitle(data, title)
+
 	PlayerDataModule.applyStatEffects(player)
 	PlayerDataModule.sendStatPointsUpdate(player)
-	print("[PlayerDataModule] " .. player.Name .. " chose faction: " .. faction)
+	fireTitleChanged(player, titleId)
+	print("[PlayerDataModule] " .. player.Name .. " chose legacy faction " .. faction .. " via title " .. titleId)
 	return true
 end
 
 function PlayerDataModule.resetFaction(player)
 	local data = playerData[player]
 	if not data then return false, "No data" end
-	if data.Faction == "" then return false, "No faction set" end
+	if data.Faction == "" and data.EquippedTitle == "" then return false, "No title set" end
 
 	local refunded = 0
 	for statKey, _requiredFaction in pairs(StatConfig.FACTION_LOCK) do
@@ -310,14 +418,147 @@ function PlayerDataModule.resetFaction(player)
 	data.StatPoints = data.StatPoints + refunded
 
 	local oldFaction = data.Faction
+	local oldTitle = data.EquippedTitle
 	data.Faction = ""
+	data.EquippedTitle = ""
 
 	PlayerDataModule.applyStatEffects(player)
 	PlayerDataModule.sendStatPointsUpdate(player)
-	print("[PlayerDataModule] " .. player.Name .. " reset faction (was " .. oldFaction .. "), refunded " .. refunded .. " faction-locked stat points")
+	fireTitleChanged(player, nil)
+	print("[PlayerDataModule] " .. player.Name .. " reset title (was " .. oldTitle .. ", faction " .. oldFaction .. "), refunded " .. refunded .. " faction-locked stat points")
 	return true
 end
 
+-- ==================== TITLE SYSTEM ====================
+function fireTitleChanged(player, titleId)
+	if not TitleChangedRemote then
+		TitleChangedRemote = Remotes:FindFirstChild("TitleChanged")
+	end
+	if not TitleChangedRemote then return end
+	local data = playerData[player]
+	if not data then return end
+	local titleData = titleId and data.Titles and data.Titles[titleId] or nil
+	TitleChangedRemote:FireClient(player, titleId, titleData, data.EquippedTitle or "")
+end
+
+function PlayerDataModule.equipTitle(player, titleId)
+	local data = playerData[player]
+	if not data then return false, "No data" end
+	local title = TitleModule.getTitle(titleId)
+	if not title then return false, "Unknown title" end
+
+	data.EquippedTitle = titleId
+	title = applyTitleDerivedFields(data)
+	grantStartingScrollForTitle(data, title)
+
+	PlayerDataModule.applyStatEffects(player)
+	PlayerDataModule.sendStatPointsUpdate(player)
+	fireTitleChanged(player, titleId)
+	print("[PlayerDataModule] " .. player.Name .. " equipped title: " .. titleId)
+	return true
+end
+
+function PlayerDataModule.unequipTitle(player)
+	local data = playerData[player]
+	if not data then return false end
+	data.EquippedTitle = ""
+	data.Faction = ""
+	PlayerDataModule.applyStatEffects(player)
+	PlayerDataModule.sendStatPointsUpdate(player)
+	fireTitleChanged(player, nil)
+	return true
+end
+
+function PlayerDataModule.needsTitleSelection(player)
+	local data = playerData[player]
+	if not data then return true end
+	return not ensurePlayableIdentity(data)
+end
+
+function PlayerDataModule.addTitleXP(player, titleId, amount)
+	local data = playerData[player]
+	if not data then return 0 end
+	if not data.Titles[titleId] then
+		data.Titles[titleId] = { Level = 1, XP = 0, RebirthCount = 0 }
+	end
+
+	local titleData = data.Titles[titleId]
+	local title = TitleModule.getTitle(titleId)
+	if not title then return 0 end
+
+	local xpMult = TitleModule.xpMultiplier(titleData.RebirthCount or 0)
+	titleData.XP = titleData.XP + math.floor(amount * xpMult)
+
+	local levelsGained = 0
+	while titleData.Level < title.MaxLevel do
+		local needed = TitleModule.xpForLevel(titleId, titleData.Level)
+		if titleData.XP >= needed then
+			titleData.XP = titleData.XP - needed
+			titleData.Level = titleData.Level + 1
+			levelsGained = levelsGained + 1
+		else
+			break
+		end
+	end
+
+	if levelsGained > 0 then
+		PlayerDataModule.applyStatEffects(player)
+		PlayerDataModule.sendStatPointsUpdate(player)
+		print("[PlayerDataModule] " .. player.Name .. " title " .. titleId .. " reached level " .. titleData.Level)
+	end
+
+	fireTitleChanged(player, titleId)
+	return levelsGained
+end
+
+function PlayerDataModule.rebirthTitle(player, titleId)
+	local data = playerData[player]
+	if not data then return false, "No data" end
+	if not data.Titles[titleId] then return false, "Title not found" end
+
+	local title = TitleModule.getTitle(titleId)
+	if not title then return false, "Unknown title" end
+
+	local titleData = data.Titles[titleId]
+	if titleData.Level < title.MaxLevel then
+		return false, "Must reach max level to rebirth"
+	end
+
+	titleData.RebirthCount = (titleData.RebirthCount or 0) + 1
+	titleData.Level = 1
+	titleData.XP = 0
+
+	PlayerDataModule.applyStatEffects(player)
+	PlayerDataModule.sendStatPointsUpdate(player)
+	fireTitleChanged(player, titleId)
+	print("[PlayerDataModule] " .. player.Name .. " rebirthd title " .. titleId .. " (rebirth #" .. titleData.RebirthCount .. ")")
+	return true
+end
+
+function PlayerDataModule.getTitleData(player, titleId)
+	local data = playerData[player]
+	if not data then return nil end
+	return data.Titles and data.Titles[titleId]
+end
+
+-- ==================== EQUIPPED STYLE ====================
+function PlayerDataModule.equipStyle(player, style)
+	local data = playerData[player]
+	if not data then return false end
+	data.EquippedStyle = style
+	if StyleChangedRemote then
+		StyleChangedRemote:FireClient(player, style)
+	end
+	return true
+end
+
+function PlayerDataModule.getEquippedStyle(player)
+	local data = playerData[player]
+	if not data then return "" end
+	return data.EquippedStyle or ""
+end
+
+-- ==================== SKILLS / INVENTORY ====================
 function PlayerDataModule.unlockSkill(player, skillId)
 	local data = playerData[player]
 	if not data then return false end
@@ -340,6 +581,10 @@ end
 function PlayerDataModule.addInventoryItem(player, itemId)
 	local data = playerData[player]
 	if not data then return false end
+	-- Prevent duplicates
+	for _, id in data.Inventory do
+		if id == itemId then return false end
+	end
 	table.insert(data.Inventory, itemId)
 	return true
 end
@@ -352,6 +597,15 @@ function PlayerDataModule.removeInventoryItem(player, itemId)
 			table.remove(data.Inventory, i)
 			return true
 		end
+	end
+	return false
+end
+
+function PlayerDataModule.hasInventoryItem(player, itemId)
+	local data = playerData[player]
+	if not data then return false end
+	for _, id in data.Inventory do
+		if id == itemId then return true end
 	end
 	return false
 end
@@ -395,6 +649,24 @@ function PlayerDataModule.loadSavePayload(player, payload)
 			data[key] = payload[key]
 		end
 	end
+
+	-- Ensure tables are correct types after load
+	if typeof(data.Titles) ~= "table" then
+		data.Titles = {}
+	end
+	if typeof(data.Inventory) ~= "table" then
+		data.Inventory = {}
+	end
+
+	if (not data.EquippedTitle or data.EquippedTitle == "") and data.Faction ~= "" then
+		local titleId = getDefaultTitleForFaction(data.Faction)
+		if titleId then
+			data.EquippedTitle = titleId
+			print("[PlayerDataModule] Migrated legacy faction " .. data.Faction .. " to title " .. titleId .. " for " .. player.Name)
+		end
+	end
+
+	ensurePlayableIdentity(data)
 
 	if not data.StatPointsMigrated and data.Level > 1 then
 		local pointsSpent = 0
@@ -444,6 +716,7 @@ function PlayerDataModule.initPlayer(player)
 		end
 	end
 	playerData[player] = data
+	ensurePlayableIdentity(data)
 
 	local stats = PlayerDataModule.computeStats(data)
 	data.MaxHP = stats.maxHP
@@ -596,6 +869,9 @@ local MASTERY_STYLES = {
 	"DemonSlash",
 	"BloodBurst",
 	"ShadowStep",
+	"FlameFirst",
+	"FlameSecond",
+	"FlameThird",
 }
 
 local MASTERY_XP_PER_LEVEL = 100
