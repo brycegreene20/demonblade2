@@ -1,0 +1,21 @@
+# Rojo build output
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+
+# Rojo sourcemap (auto-generated, large)
+sourcemap.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+*.suo
+.idea/
+
+# Package managers (if added later)
+Packages/
+ServerPackages/
