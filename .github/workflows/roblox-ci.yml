@@ -168,7 +168,18 @@ jobs:
             $resp = Invoke-RestMethod -Uri "https://apis.roblox.com/universes/v1/universes/$universeId" -Headers $headers -Method Get -ErrorAction Stop
             Write-Host "API key validation succeeded for universe $universeId."
           } catch {
-            Write-Host "API key validation failed for universe $universeId. Ensure ROBLOXSTAGINGAPIKEY has publish/update scopes and belongs to the account that owns this universe."
+            $statusCode = $_.Exception.Response.StatusCode.value__
+            $body = $null
+            try {
+              $stream = $_.Exception.Response.GetResponseStream()
+              $reader = [System.IO.StreamReader]::new($stream)
+              $body = $reader.ReadToEnd()
+            } catch {}
+            Write-Host "API key validation failed."
+            Write-Host "  Universe ID : $universeId"
+            Write-Host "  HTTP status : $statusCode"
+            if ($body) { Write-Host "  Response    : $body" }
+            Write-Host "  Checklist   : key is valid/not expired, has universe:read + universe:publish + place:publish scopes, belongs to the account that owns this universe."
             throw $_
           }
 
@@ -235,7 +246,18 @@ jobs:
             $resp = Invoke-RestMethod -Uri "https://apis.roblox.com/universes/v1/universes/$universeId" -Headers $headers -Method Get -ErrorAction Stop
             Write-Host "API key validation succeeded for universe $universeId."
           } catch {
-            Write-Host "API key validation failed for universe $universeId. Ensure ROBLOXPRODUCTIONAPIKEY has publish/update scopes and belongs to the account that owns this universe."
+            $statusCode = $_.Exception.Response.StatusCode.value__
+            $body = $null
+            try {
+              $stream = $_.Exception.Response.GetResponseStream()
+              $reader = [System.IO.StreamReader]::new($stream)
+              $body = $reader.ReadToEnd()
+            } catch {}
+            Write-Host "API key validation failed."
+            Write-Host "  Universe ID : $universeId"
+            Write-Host "  HTTP status : $statusCode"
+            if ($body) { Write-Host "  Response    : $body" }
+            Write-Host "  Checklist   : key is valid/not expired, has universe:read + universe:publish + place:publish scopes, belongs to the account that owns this universe."
             throw $_
           }
 
