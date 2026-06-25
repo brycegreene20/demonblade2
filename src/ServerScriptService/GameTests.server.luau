@@ -136,12 +136,12 @@ do
 		assert_truthy("Demon title exists",       TitleModule.getTitle("Demon"))
 
 		local ds = TitleModule.getTitle("DemonSlayer")
-		assert_truthy("DemonSlayer has XP formula", ds and typeof(ds.xpForLevel) == "function")
+		assert_truthy("DemonSlayer has XP formula", ds and typeof(TitleModule.xpForLevel) == "function")
 
-		local xpLv1  = ds and ds.xpForLevel(1)
-		local xpLv10 = ds and ds.xpForLevel(10)
-		assert_truthy("XP level 1 > 0",   xpLv1 and xpLv1 > 0)
-		assert_truthy("XP level 10 > lv1", xpLv10 and xpLv1 and xpLv10 > xpLv1)
+		local xpLv1  = TitleModule.xpForLevel("DemonSlayer", 1)
+		local xpLv10 = TitleModule.xpForLevel("DemonSlayer", 10)
+		assert_truthy("XP level 1 > 0",    xpLv1 > 0)
+		assert_truthy("XP level 10 > lv1", xpLv10 > xpLv1)
 	end
 end
 

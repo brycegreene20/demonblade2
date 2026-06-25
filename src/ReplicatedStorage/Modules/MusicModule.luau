@@ -16,9 +16,9 @@ MusicModule.TRACKS = {
 	-- ── Main ambient / menu ───────────────────────────────────────────────
 	DemonSlayerOpening = {
 		Id      = "DemonSlayerOpening",
-		Name    = "Demon Slayer — Kimetsu no Yaiba Opening",
-		AssetId = "rbxassetid://7377999909",
-		Volume  = 0.55,
+		Name    = "Demon Slayer OST",
+		AssetId = "rbxassetid://113249797851109",
+		Volume  = 0.65,
 		Looped  = true,
 		Context = "ambient",
 	},
@@ -26,8 +26,8 @@ MusicModule.TRACKS = {
 	TanjiroEpicOrchestra = {
 		Id      = "TanjiroEpicOrchestra",
 		Name    = "Tanjiro no Uta (Epic Orchestra)",
-		AssetId = "rbxassetid://8066519860",
-		Volume  = 0.70,
+		AssetId = "rbxassetid://113249797851109",
+		Volume  = 0.75,
 		Looped  = true,
 		Context = "combat",
 	},
