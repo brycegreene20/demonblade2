@@ -153,6 +153,25 @@ jobs:
           if (-not $rojo) { throw "rojo.exe was not found after extraction." }
           "ROJO=$($rojo.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      - name: Validate Roblox API key (staging)
+        shell: pwsh
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOXSTAGINGAPIKEY }}
+          STAGING_UNIVERSE_ID: ${{ secrets.STAGING_UNIVERSE_ID }}
+        run: |
+          if (-not $env:ROBLOX_API_KEY) { throw "Missing ROBLOXSTAGINGAPIKEY secret." }
+          if (-not $env:STAGING_UNIVERSE_ID) { throw "Missing STAGING_UNIVERSE_ID secret." }
+          $apiKey     = $env:ROBLOX_API_KEY.Trim()
+          $universeId = $env:STAGING_UNIVERSE_ID.Trim()
+          $headers    = @{ 'x-api-key' = $apiKey }
+          try {
+            $resp = Invoke-RestMethod -Uri "https://apis.roblox.com/universes/v1/universes/$universeId" -Headers $headers -Method Get -ErrorAction Stop
+            Write-Host "API key validation succeeded for universe $universeId."
+          } catch {
+            Write-Host "API key validation failed for universe $universeId. Ensure ROBLOXSTAGINGAPIKEY has publish/update scopes and belongs to the account that owns this universe."
+            throw $_
+          }
+
       - name: Upload to Staging Env - Demon Blade 2
         shell: pwsh
         env:
@@ -200,6 +219,25 @@ jobs:
           $rojo = Get-ChildItem tools/bin/rojo -Recurse -Filter rojo.exe | Select-Object -First 1
           if (-not $rojo) { throw "rojo.exe was not found after extraction." }
           "ROJO=$($rojo.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Validate Roblox API key (production)
+        shell: pwsh
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOXPRODUCTIONAPIKEY }}
+          PRODUCTION_UNIVERSE_ID: ${{ secrets.PRODUCTION_UNIVERSE_ID }}
+        run: |
+          if (-not $env:ROBLOX_API_KEY) { throw "Missing ROBLOXPRODUCTIONAPIKEY secret." }
+          if (-not $env:PRODUCTION_UNIVERSE_ID) { throw "Missing PRODUCTION_UNIVERSE_ID secret." }
+          $apiKey     = $env:ROBLOX_API_KEY.Trim()
+          $universeId = $env:PRODUCTION_UNIVERSE_ID.Trim()
+          $headers    = @{ 'x-api-key' = $apiKey }
+          try {
+            $resp = Invoke-RestMethod -Uri "https://apis.roblox.com/universes/v1/universes/$universeId" -Headers $headers -Method Get -ErrorAction Stop
+            Write-Host "API key validation succeeded for universe $universeId."
+          } catch {
+            Write-Host "API key validation failed for universe $universeId. Ensure ROBLOXPRODUCTIONAPIKEY has publish/update scopes and belongs to the account that owns this universe."
+            throw $_
+          }
 
       - name: Upload to Demon Blade 2 Publish
         shell: pwsh
