@@ -39,7 +39,8 @@ jobs:
       - name: Install Rojo
         shell: pwsh
         run: |
-          $release = Invoke-RestMethod "https://api.github.com/repos/rojo-rbx/rojo/releases/tags/v$env:ROJO_VERSION"
+          $headers = @{ Authorization = "Bearer ${{ github.token }}" }
+          $release = Invoke-RestMethod "https://api.github.com/repos/rojo-rbx/rojo/releases/tags/v$env:ROJO_VERSION" -Headers $headers
           $asset = $release.assets | Where-Object {
             $_.name -match "windows" -and $_.name -match "x86_64" -and $_.name -match "\.zip$"
           } | Select-Object -First 1
@@ -55,7 +56,8 @@ jobs:
       - name: Install Selene
         shell: pwsh
         run: |
-          $release = Invoke-RestMethod "https://api.github.com/repos/Kampfkarren/selene/releases/latest"
+          $headers = @{ Authorization = "Bearer ${{ github.token }}" }
+          $release = Invoke-RestMethod "https://api.github.com/repos/Kampfkarren/selene/releases/latest" -Headers $headers
           $asset = $release.assets | Where-Object {
             $_.name -match "^selene-" -and $_.name -match "windows" -and $_.name -match "\.zip$"
           } | Select-Object -First 1
@@ -70,7 +72,8 @@ jobs:
       - name: Install Lune
         shell: pwsh
         run: |
-          $release = Invoke-RestMethod "https://api.github.com/repos/lune-org/lune/releases/tags/v$env:LUNE_VERSION"
+          $headers = @{ Authorization = "Bearer ${{ github.token }}" }
+          $release = Invoke-RestMethod "https://api.github.com/repos/lune-org/lune/releases/tags/v$env:LUNE_VERSION" -Headers $headers
           $asset = $release.assets | Where-Object {
             $_.name -match "windows" -and $_.name -match "x86_64" -and $_.name -match "\.zip$"
           } | Select-Object -First 1
@@ -136,7 +139,8 @@ jobs:
       - name: Install Rojo
         shell: pwsh
         run: |
-          $release = Invoke-RestMethod "https://api.github.com/repos/rojo-rbx/rojo/releases/tags/v$env:ROJO_VERSION"
+          $headers = @{ Authorization = "Bearer ${{ github.token }}" }
+          $release = Invoke-RestMethod "https://api.github.com/repos/rojo-rbx/rojo/releases/tags/v$env:ROJO_VERSION" -Headers $headers
           $asset = $release.assets | Where-Object {
             $_.name -match "windows" -and $_.name -match "x86_64" -and $_.name -match "\.zip$"
           } | Select-Object -First 1
@@ -183,7 +187,8 @@ jobs:
       - name: Install Rojo
         shell: pwsh
         run: |
-          $release = Invoke-RestMethod "https://api.github.com/repos/rojo-rbx/rojo/releases/tags/v$env:ROJO_VERSION"
+          $headers = @{ Authorization = "Bearer ${{ github.token }}" }
+          $release = Invoke-RestMethod "https://api.github.com/repos/rojo-rbx/rojo/releases/tags/v$env:ROJO_VERSION" -Headers $headers
           $asset = $release.assets | Where-Object {
             $_.name -match "windows" -and $_.name -match "x86_64" -and $_.name -match "\.zip$"
           } | Select-Object -First 1
