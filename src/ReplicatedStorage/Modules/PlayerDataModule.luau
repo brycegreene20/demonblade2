@@ -12,6 +12,7 @@ local MasteryChanged = Remotes:FindFirstChild("MasteryChanged")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local StatConfig = require(Modules:WaitForChild("StatConfig"))
 local TitleModule = require(Modules:WaitForChild("TitleModule"))
+local ItemsModule = require(Modules:WaitForChild("ItemsModule"))
 
 local PlayerDataModule = {}
 
@@ -63,6 +64,7 @@ local SAVE_FIELDS = {
 
 local playerData = {}
 local staminaRegenTimers = {}
+local staminaRegenLoops = {}
 local DEFAULT_STARTING_TITLE = "DemonSlayer"
 local DEBUG_IDENTITY = true
 
@@ -117,7 +119,6 @@ end
 
 local function grantStartingScrollForTitle(data, title)
 	if not title or not title.StartingScroll then return end
-	local ItemsModule = require(Modules:WaitForChild("ItemsModule"))
 	if not ItemsModule.hasItem(data.Inventory, title.StartingScroll) then
 		identityLog("Granting starting item '" .. title.StartingScroll .. "' for title '" .. title.Id .. "'")
 		table.insert(data.Inventory, title.StartingScroll)
@@ -130,6 +131,26 @@ local function grantStartingScrollForTitle(data, title)
 	end
 end
 
+local function grantCoreStyleItems(data)
+	if typeof(data.Inventory) ~= "table" then
+		data.Inventory = {}
+	end
+
+	for _, itemId in ipairs(ItemsModule.STARTER_STYLE_ITEMS) do
+		if not ItemsModule.hasItem(data.Inventory, itemId) then
+			identityLog("Granting prototype style item '" .. itemId .. "'")
+			table.insert(data.Inventory, itemId)
+		end
+	end
+
+	if not data.EquippedStyle or data.EquippedStyle == "" then
+		local defaultScroll = ItemsModule.getScroll("WaterBreathingScroll")
+		if defaultScroll then
+			data.EquippedStyle = defaultScroll.Style
+		end
+	end
+end
+
 local function ensurePlayableIdentity(data)
 	local title = TitleModule.getTitle(data.EquippedTitle or "")
 	if not title then
@@ -139,6 +160,7 @@ local function ensurePlayableIdentity(data)
 
 	title = applyTitleDerivedFields(data)
 	grantStartingScrollForTitle(data, title)
+	grantCoreStyleItems(data)
 	return title ~= nil
 end
 
@@ -154,10 +176,13 @@ function PlayerDataModule.computeStats(data)
 	local walkSpeed = math.min(StatConfig.BASE.WalkSpeed + (data.MovementSpeed * 0.5), 40)
 	local defenseMultiplier = math.min(data.Defense * 0.008, 0.64)
 
+	local equippedScroll = ItemsModule.getScrollByStyle(data.EquippedStyle or "")
+	local styleFaction = equippedScroll and equippedScroll.Faction or data.Faction
+
 	local damageMultiplier = 1.0
-	if data.Faction == "Slayer" then
+	if styleFaction == "Slayer" then
 		damageMultiplier = 1.0 + (data.BreathDamage * 0.03)
-	elseif data.Faction == "Demon" then
+	elseif styleFaction == "Demon" then
 		damageMultiplier = 1.0 + (data.DemonArtDamage * 0.03)
 	end
 
@@ -169,9 +194,10 @@ function PlayerDataModule.computeStats(data)
 			local title = TitleModule.getTitle(equippedTitle)
 			if title then
 				local buff = TitleModule.computeBuff(equippedTitle, titleData.Level or 1, titleData.RebirthCount or 0)
-				-- Only apply breath title buff for slayers, demon buff for demons
-				local factionMatches = (title.BuffType == "BreathDamage" and data.Faction == "Slayer")
-					or (title.BuffType == "DemonArtDamage" and data.Faction == "Demon")
+				-- Titles are independent from scrolls, so the buff applies only
+				-- when the equipped technique uses the matching damage family.
+				local factionMatches = (title.BuffType == "BreathDamage" and styleFaction == "Slayer")
+					or (title.BuffType == "DemonArtDamage" and styleFaction == "Demon")
 				if factionMatches then
 					damageMultiplier = damageMultiplier + buff
 				end
@@ -207,6 +233,11 @@ function PlayerDataModule.getEffectiveWalkSpeed(player)
 	if not data then return StatConfig.BASE.WalkSpeed end
 	local stats = PlayerDataModule.computeStats(data)
 	return stats.walkSpeed
+end
+
+function PlayerDataModule.getTechniqueFactionFromData(data)
+	local equippedScroll = data and ItemsModule.getScrollByStyle(data.EquippedStyle or "")
+	return equippedScroll and equippedScroll.Faction or (data and data.Faction or "")
 end
 
 function PlayerDataModule.getEffectiveMaxStamina(player)
@@ -265,9 +296,12 @@ function PlayerDataModule.sendStatPointsUpdate(player)
 	if not data then return end
 	if not StatPointsChanged then return end
 	local stats = PlayerDataModule.computeStats(data)
+	local techniqueFaction = PlayerDataModule.getTechniqueFactionFromData(data)
 	local payload = {
 		StatPoints = data.StatPoints,
 		Faction = data.Faction,
+		TechniqueFaction = techniqueFaction,
+		EquippedStyle = data.EquippedStyle or "",
 		DerivedMaxHP = stats.maxHP,
 		DerivedMaxStamina = stats.maxStamina,
 		DerivedWalkSpeed = stats.walkSpeed,
@@ -341,8 +375,8 @@ function PlayerDataModule.allocateStat(player, statName)
 	if not StatConfig.VALID_STATS[statName] then return false, "Invalid stat" end
 
 	local requiredFaction = StatConfig.FACTION_LOCK[statName]
-	if requiredFaction and data.Faction ~= requiredFaction then
-		return false, "Wrong faction for this stat"
+	if requiredFaction and PlayerDataModule.getTechniqueFactionFromData(data) ~= requiredFaction then
+		return false, "Wrong technique family for this stat"
 	end
 
 	data[statName] = (data[statName] or 0) + 1
@@ -546,6 +580,8 @@ function PlayerDataModule.equipStyle(player, style)
 	local data = playerData[player]
 	if not data then return false end
 	data.EquippedStyle = style
+	PlayerDataModule.applyStatEffects(player)
+	PlayerDataModule.sendStatPointsUpdate(player)
 	if StyleChangedRemote then
 		StyleChangedRemote:FireClient(player, style)
 	end
@@ -753,6 +789,7 @@ function PlayerDataModule.cleanupPlayer(player)
 	if staminaRegenTimers[player] then
 		staminaRegenTimers[player] = nil
 	end
+	staminaRegenLoops[player] = nil
 end
 
 function PlayerDataModule.getData(player)
@@ -794,6 +831,11 @@ function PlayerDataModule.consumeStamina(player, amount)
 end
 
 function PlayerDataModule.startStaminaRegen(player)
+	if staminaRegenLoops[player] then
+		return
+	end
+
+	staminaRegenLoops[player] = true
 	task.spawn(function()
 		while playerData[player] do
 			task.wait(0.1)
@@ -807,6 +849,7 @@ function PlayerDataModule.startStaminaRegen(player)
 				StaminaChanged:FireClient(player, data.Stamina, effMax)
 			end
 		end
+		staminaRegenLoops[player] = nil
 	end)
 end
 
@@ -863,19 +906,14 @@ end
 
 -- ==================== MASTERY SYSTEM ====================
 local MASTERY_STYLES = {
-	"WaterSurfaceSlash",
-	"WaterWheel",
-	"FlowingDance",
-	"DemonSlash",
-	"BloodBurst",
-	"ShadowStep",
-	"FlameFirst",
-	"FlameSecond",
-	"FlameThird",
+	"WaterBreathing",
+	"FlameBreathing",
+	"DemonArts",
+	"TemariDemonArts",
 }
 
-local MASTERY_XP_PER_LEVEL = 100
-local MASTERY_LEVEL_EXPONENT = 1.3
+local MASTERY_XP_PER_LEVEL = 30
+local MASTERY_LEVEL_EXPONENT = 1.25
 local MASTERY_MAX_LEVEL = 50
 
 function PlayerDataModule.masteryXPForLevel(level)
@@ -901,6 +939,28 @@ function PlayerDataModule.getAllMastery(player)
 	local data = playerData[player]
 	if not data then return {} end
 	return data.Mastery
+end
+
+function PlayerDataModule.getStyleMasteryLevelFromData(data, styleId)
+	if not data or not styleId or styleId == "" then
+		return 1
+	end
+	if typeof(data.Mastery) ~= "table" then
+		return 1
+	end
+
+	local styleMastery = data.Mastery[styleId]
+	if styleMastery then
+		return styleMastery.Level or 1
+	end
+
+	return 1
+end
+
+function PlayerDataModule.getEquippedStyleMasteryLevel(player)
+	local data = playerData[player]
+	if not data then return 1 end
+	return PlayerDataModule.getStyleMasteryLevelFromData(data, data.EquippedStyle or "")
 end
 
 function PlayerDataModule.addMasteryXP(player, styleId, amount)

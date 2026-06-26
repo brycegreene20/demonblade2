@@ -46,7 +46,7 @@
     "Players": {
       "$className": "Players",
       "$properties": {
-        "RespawnTime": 3
+        "RespawnTime": 30
       },
       "$ignoreUnknownInstances": true,
       "$path": "src/Players"

@@ -7,12 +7,26 @@ local DummyTemplate = NPCModels:WaitForChild("TrainingDummy")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
-local SkillSystemModule = require(Modules:WaitForChild("SkillSystemModule"))
+local CombatModule = require(Modules:WaitForChild("CombatModule"))
 
 local DUMMY_HP = 500
 local DUMMY_XP_REWARD = 25
 local RESPAWN_TIME = 3
 local FADE_TIME = 1
+local DEBUG_DUMMY_SPAWNS = false
+local DEBUG_DUMMY_REWARDS = false
+
+local function debugSpawnLog(message)
+	if DEBUG_DUMMY_SPAWNS then
+		print("[TrainingDummyServer] " .. message)
+	end
+end
+
+local function debugRewardLog(message)
+	if DEBUG_DUMMY_REWARDS then
+		print("[TrainingDummyServer] " .. message)
+	end
+end
 
 local GRID_ORIGIN_X = 10
 local GRID_ORIGIN_Z = 8
@@ -144,21 +158,10 @@ local function spawnDummy(spawnCFrame)
 	end
 	hrp.Anchored = true
 
-	local streamAnchor = Instance.new("Part")
-	streamAnchor.Name = "StreamAnchor"
-	streamAnchor.Size = Vector3.new(1, 1, 1)
-	streamAnchor.Transparency = 1
-	streamAnchor.CanCollide = false
-	streamAnchor.CanQuery = false
-	streamAnchor.CanTouch = false
-	streamAnchor.Anchored = true
-	streamAnchor.CFrame = spawnCFrame
-	streamAnchor.Parent = dummy
-
-	dummy.PrimaryPart = streamAnchor
+	dummy.PrimaryPart = hrp
 
 	for _, part in dummy:GetDescendants() do
-		if part:IsA("BasePart") and part ~= streamAnchor then
+		if part:IsA("BasePart") then
 			part.Anchored = true
 			if part ~= hrp then
 				part.CanCollide = true
@@ -182,7 +185,20 @@ local function spawnDummy(spawnCFrame)
 	dummy:SetAttribute("XPReward", DUMMY_XP_REWARD)
 
 	dummy:PivotTo(spawnCFrame)
+
+	local streamAnchor = Instance.new("Part")
+	streamAnchor.Name = "StreamAnchor"
+	streamAnchor.Size = Vector3.new(1, 1, 1)
+	streamAnchor.Transparency = 1
+	streamAnchor.CanCollide = false
+	streamAnchor.CanQuery = false
+	streamAnchor.CanTouch = false
+	streamAnchor.Anchored = true
+	streamAnchor.CFrame = spawnCFrame
+	streamAnchor.Parent = dummy
+
 	dummy.Parent = dummiesFolder
+	debugSpawnLog("Spawned dummy at " .. tostring(spawnCFrame.Position))
 
 	local head = dummy:FindFirstChild("Head")
 	local barParent = head or hrp
@@ -224,31 +240,32 @@ local function spawnDummy(spawnCFrame)
 		if lastAttackerId then
 			local attacker = Players:GetPlayerByUserId(lastAttackerId)
 			if attacker then
-				PlayerDataModule.addXP(attacker, DUMMY_XP_REWARD)
-				print("[TrainingDummyServer] Awarded " .. DUMMY_XP_REWARD .. " XP to " .. attacker.Name)
+				local rewardPlayers = CombatModule.getRewardPlayers(dummy, attacker, 120)
+				for _, rewardedPlayer in rewardPlayers do
+					PlayerDataModule.addXP(rewardedPlayer, DUMMY_XP_REWARD)
+					debugRewardLog("Awarded " .. DUMMY_XP_REWARD .. " XP to " .. rewardedPlayer.Name)
 
-				-- selene: allow(global_usage)
-				if shared.QuestServer and shared.QuestServer.onEnemyKilled then
 					-- selene: allow(global_usage)
-					shared.QuestServer.onEnemyKilled(attacker, "TrainingDummy")
-				end
-
-				-- selene: allow(global_usage)
-				if shared.BountyServer and shared.BountyServer.onEnemyKilled then
-					-- selene: allow(global_usage)
-					shared.BountyServer.onEnemyKilled(attacker, "TrainingDummy")
-				end
-
-				local data = PlayerDataModule.getData(attacker)
-				if data and data.Faction ~= "" then
-					local factionSkills = SkillSystemModule.getSkillsForFaction(data.Faction)
-					for _, skill in factionSkills do
-						PlayerDataModule.addMasteryXP(attacker, skill.Id, 1)
+					if shared.QuestServer and shared.QuestServer.onEnemyKilled then
+						-- selene: allow(global_usage)
+						shared.QuestServer.onEnemyKilled(rewardedPlayer, "TrainingDummy")
 					end
-					print("[TrainingDummyServer] Awarded 1 mastery XP per equipped style to " .. attacker.Name)
+
+					-- selene: allow(global_usage)
+					if shared.BountyServer and shared.BountyServer.onEnemyKilled then
+						-- selene: allow(global_usage)
+						shared.BountyServer.onEnemyKilled(rewardedPlayer, "TrainingDummy")
+					end
+
+					local data = PlayerDataModule.getData(rewardedPlayer)
+					if data and data.EquippedStyle and data.EquippedStyle ~= "" then
+						PlayerDataModule.addMasteryXP(rewardedPlayer, data.EquippedStyle, 1)
+						debugRewardLog("Awarded 1 mastery XP to " .. rewardedPlayer.Name .. " for style " .. data.EquippedStyle)
+					end
 				end
 			end
 		end
+		CombatModule.clearDamageContributors(dummy)
 
 		hpLabel.Text = "DEFEATED"
 		fill.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
@@ -278,7 +295,6 @@ local function spawnDummy(spawnCFrame)
 		end)
 	end)
 
-	print("[TrainingDummyServer] Spawned dummy at " .. tostring(spawnCFrame.Position))
 	return dummy
 end
 

@@ -43,6 +43,13 @@ ItemsModule.SCROLLS = {
 	},
 }
 
+ItemsModule.STARTER_STYLE_ITEMS = {
+	"WaterBreathingScroll",
+	"FlameBreathingScroll",
+	"DemonArtFruit",
+	"TemariDemonFruit",
+}
+
 function ItemsModule.getScroll(scrollId)
 	return ItemsModule.SCROLLS[scrollId]
 end
@@ -64,6 +71,28 @@ function ItemsModule.getScrollsForFaction(faction)
 		end
 	end
 	return result
+end
+
+function ItemsModule.getAllScrolls()
+	local result = {}
+	for _, scroll in ItemsModule.SCROLLS do
+		table.insert(result, scroll)
+	end
+	table.sort(result, function(a, b)
+		return (a.Name or a.Id) < (b.Name or b.Id)
+	end)
+	return result
+end
+
+function ItemsModule.canEquipForFaction(scrollId, _faction)
+	local scroll = ItemsModule.getScroll(scrollId)
+	if not scroll then
+		return false
+	end
+
+	-- Titles are independent from equipped scrolls/fruits. Keep this helper for
+	-- older callers, but do not block cross-title build-craft.
+	return true
 end
 
 function ItemsModule.hasItem(inventory, itemId)

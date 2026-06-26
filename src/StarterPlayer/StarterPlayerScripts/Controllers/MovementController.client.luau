@@ -17,6 +17,8 @@ local LUNGE_POWER = 110
 local AERIAL_POWER_MULT = 1.1
 local _IFRAME_DURATION = 0.2
 local LUNGE_VFX_DURATION = 0.35
+local DASH_FORCE_DURATION = 0.16
+local USE_LUNGE_ANIMATION = false
 local DOUBLE_JUMP_MULT = 0.95
 local MAX_DOWNWARD_ANGLE = math.rad(60)
 
@@ -124,9 +126,24 @@ local function getAerialDirection()
 	end
 
 	if dir.Magnitude > 0.01 then
-		return dir.Unit
+		local y = math.clamp(dir.Y, -0.15, 0.25)
+		local sanitized = Vector3.new(dir.X, y, dir.Z)
+		if sanitized.Magnitude > 0.01 then
+			return sanitized.Unit
+		end
 	end
 	return Vector3.new(0, 0, -1)
+end
+
+local function recoverDashPosture(humanoid, hrp)
+	if not humanoid or humanoid.Health <= 0 then return end
+	humanoid.PlatformStand = false
+	humanoid.Sit = false
+	humanoid.AutoRotate = true
+	if hrp then
+		hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+	end
+	humanoid:ChangeState(Enum.HumanoidStateType.Running)
 end
 
 local function spawnLungeVFX(character, _direction)
@@ -246,6 +263,7 @@ end
 local cachedLungeTrack = nil
 
 local function playLungeAnimation(_humanoid)
+	if not USE_LUNGE_ANIMATION then return end
 	if not cachedLungeTrack then return end
 
 	cachedLungeTrack:AdjustSpeed(1.8)
@@ -297,10 +315,11 @@ local function performGroundLunge()
 	force.RelativeTo = Enum.ActuatorRelativeTo.World
 	force.Parent = hrp
 
-	task.delay(0.18, function()
+	task.delay(DASH_FORCE_DURATION, function()
 		if force and force.Parent then
 			force:Destroy()
 		end
+		recoverDashPosture(humanoid, hrp)
 	end)
 
 	task.delay(LUNGE_COOLDOWN, function()
@@ -347,10 +366,11 @@ local function performAerialDash()
 	force.RelativeTo = Enum.ActuatorRelativeTo.World
 	force.Parent = hrp
 
-	task.delay(0.18, function()
+	task.delay(DASH_FORCE_DURATION, function()
 		if force and force.Parent then
 			force:Destroy()
 		end
+		recoverDashPosture(humanoid, hrp)
 	end)
 
 	task.delay(AERIAL_COOLDOWN, function()
@@ -404,7 +424,12 @@ UserInputService.JumpRequest:Connect(function()
 end)
 
 local function setupCharacter(character)
+	-- Claim the camera immediately before any yield so there is no skyview gap
+	local camera = workspace.CurrentCamera
+	camera.CameraType = Enum.CameraType.Custom
+
 	local humanoid = character:WaitForChild("Humanoid")
+	camera.CameraSubject = humanoid
 
 	isLunging = false
 	_lastLungeTime = 0
@@ -414,18 +439,20 @@ local function setupCharacter(character)
 	isAirborne = false
 
 	cachedLungeTrack = nil
-	task.defer(function()
-		local animator = humanoid:FindFirstChildOfClass("Animator")
-		if not animator then
-			animator = humanoid:WaitForChild("Animator", 5)
-		end
-		if animator then
-			local anim = Instance.new("Animation")
-			anim.AnimationId = "rbxassetid://180435571"
-			cachedLungeTrack = animator:LoadAnimation(anim)
-			cachedLungeTrack.Priority = Enum.AnimationPriority.Action2
-		end
-	end)
+	if USE_LUNGE_ANIMATION then
+		task.defer(function()
+			local animator = humanoid:FindFirstChildOfClass("Animator")
+			if not animator then
+				animator = humanoid:WaitForChild("Animator", 5)
+			end
+			if animator then
+				local anim = Instance.new("Animation")
+				anim.AnimationId = "rbxassetid://180435571"
+				cachedLungeTrack = animator:LoadAnimation(anim)
+				cachedLungeTrack.Priority = Enum.AnimationPriority.Action2
+			end
+		end)
+	end
 
 	humanoid.StateChanged:Connect(function(_oldState, newState)
 		if newState == Enum.HumanoidStateType.Freefall or newState == Enum.HumanoidStateType.Jumping then
@@ -444,9 +471,15 @@ local function setupCharacter(character)
 		end
 	end)
 
-	local camera = workspace.CurrentCamera
-	camera.CameraType = Enum.CameraType.Custom
-	camera.CameraSubject = humanoid
+	-- Re-attach camera after death so Roblox's spectate cam never takes over
+	humanoid.Died:Connect(function()
+		task.delay(0.1, function()
+			local cam = workspace.CurrentCamera
+			if cam then
+				cam.CameraType = Enum.CameraType.Custom
+			end
+		end)
+	end)
 end
 
 local function onCharacterAdded(character)

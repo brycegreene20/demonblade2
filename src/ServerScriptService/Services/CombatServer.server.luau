@@ -10,7 +10,6 @@ local BlockParryVFXRemote = Remotes:WaitForChild("BlockParryVFX")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local CombatModule = require(Modules:WaitForChild("CombatModule"))
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
-local SkillSystemModule = require(Modules:WaitForChild("SkillSystemModule"))
 
 local COMBO_RESET_TIME = CombatModule.COMBO_RESET_TIME
 local MAX_COMBO = CombatModule.MAX_COMBO
@@ -196,13 +195,10 @@ local function onCharacterAdded(player, character)
 		if not killer or killer == player then return end
 
 		local data = PlayerDataModule.getData(killer)
-		if not data or data.Faction == "" then return end
+		if not data or not data.EquippedStyle or data.EquippedStyle == "" then return end
 
-		local factionSkills = SkillSystemModule.getSkillsForFaction(data.Faction)
-		for _, skill in factionSkills do
-			PlayerDataModule.addMasteryXP(killer, skill.Id, MASTERY_XP_PVP_KILL)
-		end
-		print("[CombatServer] Awarded " .. MASTERY_XP_PVP_KILL .. " mastery XP per equipped style to " .. killer.Name .. " for PvP kill")
+		PlayerDataModule.addMasteryXP(killer, data.EquippedStyle, MASTERY_XP_PVP_KILL)
+		print("[CombatServer] Awarded " .. MASTERY_XP_PVP_KILL .. " mastery XP to " .. killer.Name .. " for PvP kill style=" .. data.EquippedStyle)
 	end)
 end
 

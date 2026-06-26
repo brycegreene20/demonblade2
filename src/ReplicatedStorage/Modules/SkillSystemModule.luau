@@ -14,13 +14,59 @@ local KNOWN_STYLES = {
 	TemariDemonArts = true,
 }
 
+local DEFAULT_SKILL_ICONS = {
+	WaterBreathing = {
+		Q = "🌊",
+		E = "💧",
+		R = "🌀",
+		F = "⚔️",
+		V = "⭐",
+		Y = "🐉",
+	},
+	FlameBreathing = {
+		Q = "🔥",
+		E = "☀️",
+		R = "✺",
+		F = "🌺",
+		V = "🔥",
+		Y = "🐯",
+	},
+	DemonArts = {
+		Q = "🩸",
+		E = "💥",
+		R = "🌑",
+		F = "🟥",
+		V = "👹",
+		Y = "🌕",
+	},
+	TemariDemonArts = {
+		Q = "●",
+		E = "●●",
+		R = "✺",
+		F = "☾",
+		V = "🌕",
+		Y = "🩸",
+	},
+}
+
+local MASTERY_UNLOCK_LEVEL_BY_SLOT = {
+	Q = 1,
+	E = 2,
+	R = 4,
+	F = 7,
+	Y = 10,
+	V = 15,
+}
+
 function SkillSystemModule.registerSkill(skillId, config)
+	local styleIcons = DEFAULT_SKILL_ICONS[config.Style or ""]
 	registeredSkills[skillId] = {
 		Id = skillId,
 		Name = config.Name or skillId,
 		Faction = config.Faction or "Any",
 		Style = config.Style or "",
 		Slot = config.Slot or "Q",
+		Icon = config.Icon or (styleIcons and styleIcons[config.Slot or "Q"]) or "✦",
 		BaseDamage = config.BaseDamage or 0,
 		StaminaCost = config.StaminaCost or 0,
 		Cooldown = config.Cooldown or 5,
@@ -30,6 +76,7 @@ function SkillSystemModule.registerSkill(skillId, config)
 		MultiHitDelay = config.MultiHitDelay or 0.15,
 		Description = config.Description or "",
 		LevelRequired = config.LevelRequired or 1,
+		MasteryLevelRequired = config.MasteryLevelRequired or MASTERY_UNLOCK_LEVEL_BY_SLOT[config.Slot or "Q"] or 1,
 	}
 end
 
@@ -509,6 +556,18 @@ function SkillSystemModule.canUseSkill(player, skillId, playerData)
 
 	if playerData.Level < skill.LevelRequired then
 		return false, "Level too low"
+	end
+
+	local masteryLevel = 1
+	if skill.Style and skill.Style ~= "" and typeof(playerData.Mastery) == "table" then
+		local mastery = playerData.Mastery[skill.Style]
+		if mastery then
+			masteryLevel = mastery.Level or 1
+		end
+	end
+
+	if masteryLevel < (skill.MasteryLevelRequired or 1) then
+		return false, "Mastery level too low"
 	end
 
 	if SkillSystemModule.isOnCooldown(player, skillId) then

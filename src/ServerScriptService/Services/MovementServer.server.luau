@@ -39,7 +39,8 @@ local function syncCacheFromData(player)
 end
 
 Players.PlayerAdded:Connect(function(player)
-	local savedData, _loadSuccess = DataStoreModule.loadAsync(player)
+	-- Register CharacterAdded BEFORE blocking on loadAsync so we never miss the event
+	local savedData = nil
 	local dataApplied = false
 
 	local function applyLoadedData(_p)
@@ -93,6 +94,9 @@ Players.PlayerAdded:Connect(function(player)
 		PlayerDataModule.onCharacterAdded(player)
 	end
 
+	-- Load data after handlers are connected so CharacterAdded is never missed
+	savedData = DataStoreModule.loadAsync(player)
+
 	applyLoadedData(player)
 
 	local data = PlayerDataModule.getData(player)
@@ -132,12 +136,22 @@ local function setIFrames(character, enabled)
 			part.CanCollide = not enabled
 		end
 	end
-	-- PlatformStand prevents the Humanoid's auto-balance physics from tripping
-	-- the character when passing through enemy bodies at high speed.
+
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
-		humanoid.PlatformStand = enabled
+		humanoid.PlatformStand = false
+		humanoid.Sit = false
+		humanoid.AutoRotate = true
+		if not enabled and humanoid.Health > 0 then
+			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+			task.defer(function()
+				if humanoid and humanoid.Parent and humanoid.Health > 0 then
+					humanoid:ChangeState(Enum.HumanoidStateType.Running)
+				end
+			end)
+		end
 	end
+
 	local forceField = character:FindFirstChildOfClass("ForceField")
 	if enabled and not forceField then
 		local ff = Instance.new("ForceField")
@@ -147,6 +161,29 @@ local function setIFrames(character, enabled)
 	elseif not enabled and forceField and forceField.Name == "LungeIFrame" then
 		forceField:Destroy()
 	end
+end
+
+local function sanitizeLungeDirection(moveDirection, isAerial, hrp)
+	local fallback = hrp.CFrame.LookVector
+	if typeof(moveDirection) ~= "Vector3" or moveDirection.Magnitude <= 0.01 then
+		moveDirection = fallback
+	end
+
+	local x = moveDirection.X
+	local y = if isAerial == true then math.clamp(moveDirection.Y, -0.15, 0.25) else 0
+	local z = moveDirection.Z
+	local sanitized = Vector3.new(x, y, z)
+
+	if sanitized.Magnitude <= 0.01 then
+		sanitized = Vector3.new(fallback.X, 0, fallback.Z)
+	end
+
+	if sanitized.Magnitude <= 0.01 then
+		warn("[MovementServer] Invalid lunge direction; falling back to world forward")
+		return Vector3.new(0, 0, -1)
+	end
+
+	return sanitized.Unit
 end
 
 LungeRemote.OnServerEvent:Connect(function(player, moveDirection, isAerial)
@@ -169,12 +206,7 @@ LungeRemote.OnServerEvent:Connect(function(player, moveDirection, isAerial)
 	lungeCooldowns[player] = now
 	iframeActive[player] = true
 
-	local dir
-	if typeof(moveDirection) == "Vector3" and moveDirection.Magnitude > 0 then
-		dir = moveDirection.Unit
-	else
-		dir = hrp.CFrame.LookVector
-	end
+	local dir = sanitizeLungeDirection(moveDirection, isAerial, hrp)
 
 	local power = LUNGE_POWER
 	if isAerial == true then
@@ -208,6 +240,19 @@ LungeRemote.OnServerEvent:Connect(function(player, moveDirection, isAerial)
 			setIFrames(character, false)
 		end
 		iframeActive[player] = false
+	end)
+
+	task.delay(IFRAME_DURATION + 0.45, function()
+		if not character or not character.Parent then return end
+		local recoveryHumanoid = character:FindFirstChildOfClass("Humanoid")
+		if not recoveryHumanoid or recoveryHumanoid.Health <= 0 then return end
+		if recoveryHumanoid.PlatformStand or recoveryHumanoid.Sit then
+			warn("[MovementServer] Recovered stuck humanoid after lunge for " .. player.Name)
+			recoveryHumanoid.PlatformStand = false
+			recoveryHumanoid.Sit = false
+			recoveryHumanoid.AutoRotate = true
+			recoveryHumanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+		end
 	end)
 end)
 
@@ -250,6 +295,7 @@ GetPlayerDataRemote.OnServerInvoke = function(player)
 		Level = data.Level,
 		XP = data.XP,
 		Faction = data.Faction,
+		TechniqueFaction = PlayerDataModule.getTechniqueFactionFromData(data),
 		StatPoints = data.StatPoints,
 		EquippedStyle = data.EquippedStyle or "",
 		EquippedTitle = data.EquippedTitle or "",

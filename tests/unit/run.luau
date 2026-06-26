@@ -145,6 +145,7 @@ end
 local TitleModule = loadModule("src/ReplicatedStorage/Modules/TitleModule.luau")
 local ItemsModule = loadModule("src/ReplicatedStorage/Modules/ItemsModule.luau")
 local SkillSystemModule = loadModule("src/ReplicatedStorage/Modules/SkillSystemModule.luau")
+local QuestDataModule = loadModule("src/ReplicatedStorage/Modules/QuestDataModule.luau")
 local MusicModule = loadModule("src/ReplicatedStorage/Modules/MusicModule.luau")
 
 test("default Demon Slayer title maps to a playable Slayer identity", function()
@@ -180,6 +181,16 @@ test("inventory helpers find starting scrolls and styles", function()
 	expectEqual(ItemsModule.hasItem({ "WaterBreathingScroll" }, "DemonArtFruit"), false, "missing item lookup")
 	expectEqual(ItemsModule.getScrollByStyle("WaterBreathing").Id, "WaterBreathingScroll", "WaterBreathing scroll lookup")
 	expectEqual(ItemsModule.getScrollByStyle("DemonArts").Id, "DemonArtFruit", "DemonArts scroll lookup")
+	expectTruthy(ItemsModule.hasItem(ItemsModule.STARTER_STYLE_ITEMS, "FlameBreathingScroll"), "Flame scroll starter item")
+	expectTruthy(ItemsModule.hasItem(ItemsModule.STARTER_STYLE_ITEMS, "TemariDemonFruit"), "Temari fruit starter item")
+end)
+
+test("inventory helper allows title-independent style equips", function()
+	expectEqual(ItemsModule.canEquipForFaction("WaterBreathingScroll", "Slayer"), true, "Slayer can equip WaterBreathingScroll")
+	expectEqual(ItemsModule.canEquipForFaction("WaterBreathingScroll", "Demon"), true, "Demon title can equip WaterBreathingScroll")
+	expectEqual(ItemsModule.canEquipForFaction("DemonArtFruit", "Demon"), true, "Demon can equip DemonArtFruit")
+	expectEqual(ItemsModule.canEquipForFaction("DemonArtFruit", "Slayer"), true, "Slayer title can equip DemonArtFruit")
+	expectEqual(ItemsModule.canEquipForFaction("MissingItem", "Slayer"), false, "missing item rejected")
 end)
 
 test("Water Breathing skills are unlocked by the default equipped style", function()
@@ -191,6 +202,9 @@ test("Water Breathing skills are unlocked by the default equipped style", functi
 		Level = 1,
 		Stamina = 100,
 		EquippedStyle = "WaterBreathing",
+		Mastery = {
+			WaterBreathing = { Level = 1 },
+		},
 	})
 	expectEqual(canUse, true, "Water skill should be usable with WaterBreathing equipped")
 	expectEqual(reason, nil, "usable skill rejection reason")
@@ -201,6 +215,10 @@ test("skill gating rejects wrong style and low stamina", function()
 		Level = 1,
 		Stamina = 100,
 		EquippedStyle = "FlameBreathing",
+		Mastery = {
+			FlameBreathing = { Level = 10 },
+			WaterBreathing = { Level = 10 },
+		},
 	})
 	expectEqual(canUseWrongStyle, false, "wrong style should be rejected")
 	expectEqual(wrongStyleReason, "Style not equipped", "wrong style reason")
@@ -209,9 +227,48 @@ test("skill gating rejects wrong style and low stamina", function()
 		Level = 1,
 		Stamina = 0,
 		EquippedStyle = "WaterBreathing",
+		Mastery = {
+			WaterBreathing = { Level = 10 },
+		},
 	})
 	expectEqual(canUseLowStamina, false, "low stamina should be rejected")
 	expectEqual(lowStaminaReason, "Not enough stamina", "low stamina reason")
+end)
+
+test("advanced skills unlock by equipped style mastery", function()
+	local locked, lockedReason = SkillSystemModule.canUseSkill({}, "WaterWheel", {
+		Level = 1,
+		Stamina = 100,
+		EquippedStyle = "WaterBreathing",
+		Mastery = {
+			WaterBreathing = { Level = 1 },
+		},
+	})
+	expectEqual(locked, false, "WaterWheel locked below mastery requirement")
+	expectEqual(lockedReason, "Mastery level too low", "mastery gate reason")
+
+	local unlocked, unlockedReason = SkillSystemModule.canUseSkill({}, "WaterWheel", {
+		Level = 1,
+		Stamina = 100,
+		EquippedStyle = "WaterBreathing",
+		Mastery = {
+			WaterBreathing = { Level = 2 },
+		},
+	})
+	expectEqual(unlocked, true, "WaterWheel unlocks at mastery 2")
+	expectEqual(unlockedReason, nil, "no mastery rejection after unlock")
+end)
+
+test("skill icons are style-specific instead of slot-only", function()
+	local waterQ = SkillSystemModule.getSkill("WaterSurfaceSlash")
+	local demonQ = SkillSystemModule.getSkill("DemonSlash")
+	local temariQ = SkillSystemModule.getSkill("TemariThrow")
+
+	expectTruthy(waterQ.Icon ~= nil and waterQ.Icon ~= "", "Water Q icon")
+	expectTruthy(demonQ.Icon ~= nil and demonQ.Icon ~= "", "Demon Q icon")
+	expectTruthy(temariQ.Icon ~= nil and temariQ.Icon ~= "", "Temari Q icon")
+	expectEqual(demonQ.Icon ~= waterQ.Icon, true, "Demon Q icon differs from Water Q icon")
+	expectEqual(temariQ.Icon ~= waterQ.Icon, true, "Temari Q icon differs from Water Q icon")
 end)
 
 -- ==================== Temari Demon Arts ====================
@@ -267,6 +324,9 @@ test("Temari skill usable when TemariDemonArts equipped", function()
 		Level = 1,
 		Stamina = 100,
 		EquippedStyle = "TemariDemonArts",
+		Mastery = {
+			TemariDemonArts = { Level = 1 },
+		},
 	})
 	expectEqual(canUse, true, "Temari skill usable with correct style equipped")
 	expectEqual(reason, nil, "no rejection reason")
@@ -282,10 +342,28 @@ test("Temari skill gated out when wrong style equipped", function()
 	expectEqual(reason, "Style not equipped", "rejection reason")
 end)
 
+-- ==================== QuestDataModule ====================
+test("quest routing keeps dummies on Urokodaki and demons on Corps Officer", function()
+	local urokodakiQuests = QuestDataModule.getQuestsForNPC("QuestNPC_Elder")
+	local officerQuests = QuestDataModule.getQuestsForNPC("QuestNPC_Officer")
+	local merchantQuests = QuestDataModule.getQuestsForNPC("QuestNPC_Scout")
+
+	expectTruthy(#urokodakiQuests >= 1, "Urokodaki has training quests")
+	expectTruthy(#officerQuests >= 1, "Corps Officer has demon quests")
+	expectEqual(#merchantQuests, 0, "Merchant Aoi has no quests")
+
+	for _, quest in ipairs(urokodakiQuests) do
+		expectEqual(quest.objectives[1].enemyType, "TrainingDummy", quest.id .. " is a dummy quest")
+	end
+	for _, quest in ipairs(officerQuests) do
+		expectEqual(quest.objectives[1].enemyType, "ForestDemon", quest.id .. " is a demon quest")
+	end
+end)
+
 -- ==================== MusicModule ====================
 test("MusicModule exposes well-formed track definitions", function()
 	local tracks = MusicModule.getAllTracks()
-	expectTruthy(#tracks >= 1, "at least one track defined")
+	expectTruthy(#tracks >= 4, "multiple tracks defined")
 
 	local ambient = MusicModule.getDefaultAmbient()
 	expectTruthy(ambient, "default ambient track exists")
@@ -293,6 +371,34 @@ test("MusicModule exposes well-formed track definitions", function()
 	expectTruthy(ambient.Volume > 0 and ambient.Volume <= 1, "ambient volume in range")
 	expectEqual(ambient.Looped, true, "ambient track should loop")
 	expectEqual(ambient.Context, "ambient", "ambient track has ambient context")
+end)
+
+test("MusicModule exposes quiet ambient and combat playlists", function()
+	local ambientTracks = MusicModule.getTracksForContext("ambient")
+	local combatTracks = MusicModule.getTracksForContext("combat")
+	expectTruthy(#ambientTracks >= 4, "ambient playlist has options")
+	expectTruthy(#combatTracks >= 2, "combat playlist has options")
+	local ambientAssetIds = {}
+	local assetIds = {}
+	for _, track in ipairs(ambientTracks) do
+		expectTruthy(not ambientAssetIds[track.AssetId], track.Id .. " does not duplicate another ambient asset")
+		ambientAssetIds[track.AssetId] = true
+	end
+	for _, track in ipairs(MusicModule.getAllTracks()) do
+		expectTruthy(track.Volume > 0 and track.Volume <= 1, track.Id .. " volume in range")
+		expectEqual(track.Looped, true, track.Id .. " loops")
+		expectTruthy(track.AssetId:match("^rbxassetid://%d+$") ~= nil, track.Id .. " asset id shape")
+		assetIds[track.AssetId] = true
+	end
+	for _, assetId in ipairs({
+		"rbxassetid://113249797851109",
+		"rbxassetid://110015946983764",
+		"rbxassetid://92987384618845",
+		"rbxassetid://88564010620423",
+		"rbxassetid://96055187526468",
+	}) do
+		expectTruthy(assetIds[assetId], "playlist includes " .. assetId)
+	end
 end)
 
 test("MusicModule getDefaultAmbient returns a valid track", function()

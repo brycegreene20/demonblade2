@@ -260,9 +260,11 @@ end)
 local _currentFaction = ""
 local _currentStyle = ""
 local _clientInventory = {}
+local _clientMastery = {}
 local skillSlots = {}
 local skillCooldownExpiry = {}
 local isUsingSkill = false
+local updateSkillBarUI
 
 local SLOT_KEYS = {
 	[Enum.KeyCode.Q] = "Q",
@@ -298,6 +300,12 @@ local SKILL_VFX_COLORS = {
 	FlameFourth = Color3.fromRGB(255, 80, 0),
 	FlameEsoteric = Color3.fromRGB(255, 200, 30),
 	FlameFifth = Color3.fromRGB(255, 120, 10),
+	TemariThrow = Color3.fromRGB(220, 90, 230),
+	DoubleTemari = Color3.fromRGB(210, 80, 220),
+	TemariBarrage = Color3.fromRGB(230, 120, 240),
+	MoonClaw = Color3.fromRGB(190, 50, 210),
+	BloodTemari = Color3.fromRGB(200, 40, 90),
+	TemariFullMoon = Color3.fromRGB(230, 160, 255),
 }
 
 local function buildSkillSlots(faction)
@@ -305,9 +313,36 @@ local function buildSkillSlots(faction)
 	for _, slot in {"Q", "E", "R", "F", "V", "Y"} do
 		local skill = SkillSystemModule.getSkillForSlot(faction, slot)
 		if skill then
-			skillSlots[slot] = skill
+			local mastery = _clientMastery[skill.Style or ""]
+			local masteryLevel = mastery and (mastery.Level or 1) or 1
+			if masteryLevel >= (skill.MasteryLevelRequired or 1) then
+				skillSlots[slot] = skill
+			end
 		end
 	end
+end
+
+local function rebuildCurrentSkillSlots()
+	local styleToUse = _currentStyle ~= "" and _currentStyle or _currentFaction
+	if styleToUse ~= "" then
+		buildSkillSlots(styleToUse)
+		updateSkillBarUI()
+	end
+end
+
+local function cacheMastery(mastery)
+	_clientMastery = typeof(mastery) == "table" and mastery or {}
+end
+
+local function cacheMasteryEntry(styleId, level, xp, xpNeeded, totalXP)
+	if typeof(styleId) ~= "string" or styleId == "" then return end
+	_clientMastery[styleId] = {
+		Level = level or 1,
+		XP = xp or 0,
+		XPNeeded = xpNeeded or 30,
+		TotalXP = totalXP or 0,
+	}
+	rebuildCurrentSkillSlots()
 end
 
 local function setFaction(faction)
@@ -481,13 +516,13 @@ local SLOT_ICONS = {
 	Y = "🐉",
 }
 
-local function updateSkillBarUI()
+updateSkillBarUI = function()
 	for slot, ui in skillSlotFrames do
 		local isUlt = slot == ULTIMATE_SLOT
 		local skill = skillSlots[slot]
 		if skill then
 			ui.NameLabel.Text = skill.Name
-			ui.IconLabel.Text = SLOT_ICONS[slot] or "✦"
+			ui.IconLabel.Text = skill.Icon or SLOT_ICONS[slot] or "✦"
 			ui.Frame.BackgroundTransparency = 0.2
 			local color = SKILL_VFX_COLORS[skill.Id] or Color3.fromRGB(120, 120, 180)
 			ui.Stroke.Color = if isUlt then Color3.fromRGB(255, 200, 50) else color
@@ -786,8 +821,8 @@ local function vfxWaterSurfaceSlash(hrp)
 	local mainSlash = VFXAssets:FindFirstChild("SlashSkill"):Clone()
 	prepMesh(mainSlash, color, 0, Vector3.new(1.5, 0.8, 5), hrp.CFrame * CFrame.new(0, 0.3, -2))
 	TweenService:Create(mainSlash, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Size = Vector3.new(16, 6, 50),
-		CFrame = hrp.CFrame * CFrame.new(0, 0, -18),
+		Size = Vector3.new(10, 4, 34),
+		CFrame = hrp.CFrame * CFrame.new(0, 0, -13),
 		Transparency = 1,
 	}):Play()
 	Debris:AddItem(mainSlash, 0.55)
@@ -797,8 +832,8 @@ local function vfxWaterSurfaceSlash(hrp)
 	local waterTrail = spawnDSKitPart("Water trail", hrp.CFrame * CFrame.new(0, 0, -3), Vector3.new(3, 1, 8), color, 0, 0.7)
 	if waterTrail then
 		TweenService:Create(waterTrail, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = Vector3.new(10, 4, 45),
-			CFrame = hrp.CFrame * CFrame.new(0, 0, -20),
+			Size = Vector3.new(6, 3, 30),
+			CFrame = hrp.CFrame * CFrame.new(0, 0, -14),
 			Transparency = 1,
 		}):Play()
 	end
@@ -808,8 +843,8 @@ local function vfxWaterSurfaceSlash(hrp)
 		local hSlash = spawnDSKitPart("Horizontel Slash", hrp.CFrame * CFrame.new(0, 0.5, -4), Vector3.new(8, 3, 3), colorLight, 0.05, 0.5)
 		if hSlash then
 			TweenService:Create(hSlash, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-				Size = Vector3.new(28, 8, 10),
-				CFrame = hrp.CFrame * CFrame.new(0, 0, -14),
+				Size = Vector3.new(16, 5, 8),
+				CFrame = hrp.CFrame * CFrame.new(0, 0, -10),
 				Transparency = 1,
 			}):Play()
 		end
@@ -820,10 +855,10 @@ local function vfxWaterSurfaceSlash(hrp)
 		for i = 1, 2 do
 			local slashFx = VFXAssets:FindFirstChild("SlashEffect"):Clone()
 			local ang = math.rad(15 * (i == 1 and 1 or -1))
-			prepMesh(slashFx, colorLight, 0.05, Vector3.new(8, 0.4, 3), hrp.CFrame * CFrame.new(0, 0.3 + (i - 1) * 0.6, -4) * CFrame.Angles(0, 0, ang))
+			prepMesh(slashFx, colorLight, 0.05, Vector3.new(5, 0.4, 2), hrp.CFrame * CFrame.new(0, 0.3 + (i - 1) * 0.6, -4) * CFrame.Angles(0, 0, ang))
 			TweenService:Create(slashFx, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-				Size = Vector3.new(26, 1.5, 9),
-				CFrame = hrp.CFrame * CFrame.new(0, 0.3 + (i - 1) * 0.6, -15) * CFrame.Angles(0, 0, ang),
+				Size = Vector3.new(14, 1.2, 6),
+				CFrame = hrp.CFrame * CFrame.new(0, 0.3 + (i - 1) * 0.6, -10) * CFrame.Angles(0, 0, ang),
 				Transparency = 1,
 			}):Play()
 			Debris:AddItem(slashFx, 0.4)
@@ -835,8 +870,8 @@ local function vfxWaterSurfaceSlash(hrp)
 		local waterFx = spawnDSKitPart("Water effect", hrp.CFrame * CFrame.new(0, -1, -6), Vector3.new(4, 3, 4), colorLight, 0.1, 0.65)
 		if waterFx then
 			TweenService:Create(waterFx, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-				Size = Vector3.new(14, 8, 14),
-				CFrame = hrp.CFrame * CFrame.new(0, 0, -14) * CFrame.Angles(0, math.rad(90), 0),
+				Size = Vector3.new(9, 5, 9),
+				CFrame = hrp.CFrame * CFrame.new(0, 0, -10) * CFrame.Angles(0, math.rad(90), 0),
 				Transparency = 1,
 			}):Play()
 		end
@@ -844,8 +879,8 @@ local function vfxWaterSurfaceSlash(hrp)
 		local wave = VFXAssets:FindFirstChild("Wave"):Clone()
 		prepMesh(wave, color, 0.05, Vector3.new(2, 2, 2), hrp.CFrame * CFrame.new(0, -1, -5))
 		TweenService:Create(wave, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = Vector3.new(14, 8, 14),
-			CFrame = hrp.CFrame * CFrame.new(0, 0, -14) * CFrame.Angles(0, math.rad(120), 0),
+			Size = Vector3.new(9, 5, 9),
+			CFrame = hrp.CFrame * CFrame.new(0, 0, -10) * CFrame.Angles(0, math.rad(120), 0),
 			Transparency = 1,
 		}):Play()
 		Debris:AddItem(wave, 0.6)
@@ -913,7 +948,7 @@ local function vfxWaterWheel(hrp)
 	local twirl = spawnDSKitPart("good twirl", hrp.CFrame, Vector3.new(4, 4, 4), color, 0, 0.9)
 	if twirl then
 		TweenService:Create(twirl, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = Vector3.new(18, 18, 18),
+			Size = Vector3.new(14, 14, 14),
 			CFrame = hrp.CFrame * CFrame.Angles(math.rad(720), 0, math.rad(360)),
 			Transparency = 1,
 		}):Play()
@@ -922,7 +957,7 @@ local function vfxWaterWheel(hrp)
 	local whirl = VFXAssets:FindFirstChild("Whirl"):Clone()
 	prepMesh(whirl, colorDeep, 0, Vector3.new(3, 3, 3), hrp.CFrame)
 	TweenService:Create(whirl, TweenInfo.new(0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Size = Vector3.new(16, 16, 16),
+		Size = Vector3.new(13, 13, 13),
 		CFrame = hrp.CFrame * CFrame.Angles(math.rad(540), 0, math.rad(270)),
 		Transparency = 1,
 	}):Play()
@@ -935,7 +970,7 @@ local function vfxWaterWheel(hrp)
 		local spiral = VFXAssets:FindFirstChild("Spiral"):Clone()
 		prepMesh(spiral, colorLight, 0.05, Vector3.new(4, 4, 4), hrp.CFrame * CFrame.new(0, -2, 0))
 		TweenService:Create(spiral, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = Vector3.new(18, 14, 18),
+			Size = Vector3.new(14, 11, 14),
 			CFrame = hrp.CFrame * CFrame.new(0, 2, 0) * CFrame.Angles(0, math.rad(720), 0),
 			Transparency = 1,
 		}):Play()
@@ -1838,10 +1873,37 @@ local function vfxFlameSlash(hrp, color, skill)
 			slash.Transparency = 0.1
 			slash.CFrame = hrp.CFrame * CFrame.new(0, 0, zOff) * CFrame.Angles(0, 0, angle)
 			slash.Parent = workspace
+
+			local light = Instance.new("PointLight")
+			light.Color = colorGlow
+			light.Range = 14
+			light.Brightness = 1.8
+			light.Parent = slash
+
+			local emberAtt = Instance.new("Attachment")
+			emberAtt.Parent = slash
+			local embers = Instance.new("ParticleEmitter")
+			embers.Color = ColorSequence.new(colorGlow, color)
+			embers.Size = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.25),
+				NumberSequenceKeypoint.new(1, 0),
+			})
+			embers.Transparency = NumberSequence.new(0.05, 1)
+			embers.Lifetime = NumberRange.new(0.18, 0.38)
+			embers.Rate = 130
+			embers.Speed = NumberRange.new(3, 8)
+			embers.SpreadAngle = Vector2.new(35, 35)
+			embers.LightEmission = 0.85
+			embers.Parent = emberAtt
+
 			TweenService:Create(slash, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 				Transparency = 1,
 				Size = Vector3.new(0.05, 8, 8),
 			}):Play()
+			TweenService:Create(light, TweenInfo.new(0.25), {Brightness = 0, Range = 4}):Play()
+			task.delay(0.16, function()
+				embers.Enabled = false
+			end)
 			Debris:AddItem(slash, 0.35)
 
 			local embr = VFXAssets:FindFirstChild("Shockwave") and VFXAssets:FindFirstChild("Shockwave"):Clone()
@@ -1856,6 +1918,7 @@ local function vfxFlameSlash(hrp, color, skill)
 
 			local impactPart = makeInvisPart("FlameImpact" .. i, hrp.CFrame * CFrame.new(0, 0, zOff))
 			cloneParticleSet("Charge-01", impactPart, 0.25, color)
+			cloneParticleSet("Shiny-01", impactPart, 0.18, colorGlow)
 			Debris:AddItem(impactPart, 1.2)
 		end)
 	end
@@ -1996,6 +2059,35 @@ local function vfxTemariBall(hrp, count, spread)
 			ball.CFrame = CFrame.new(hrp.Position + dir * 2 + Vector3.new(0, 0.5, 0))
 			ball.Parent = workspace
 
+			local frontAtt = Instance.new("Attachment")
+			frontAtt.Position = Vector3.new(0, 0, -0.7)
+			frontAtt.Parent = ball
+			local backAtt = Instance.new("Attachment")
+			backAtt.Position = Vector3.new(0, 0, 0.7)
+			backAtt.Parent = ball
+			local trailFx = Instance.new("Trail")
+			trailFx.Attachment0 = frontAtt
+			trailFx.Attachment1 = backAtt
+			trailFx.Color = ColorSequence.new(TEMARI_COLOR2, TEMARI_COLOR1)
+			trailFx.Lifetime = 0.22
+			trailFx.LightEmission = 0.75
+			trailFx.Transparency = NumberSequence.new(0.12, 1)
+			trailFx.WidthScale = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 1.1),
+				NumberSequenceKeypoint.new(1, 0),
+			})
+			trailFx.Parent = ball
+
+			local spark = Instance.new("ParticleEmitter")
+			spark.Color = ColorSequence.new(TEMARI_GLOW, TEMARI_COLOR1)
+			spark.Size = NumberSequence.new(0.18, 0)
+			spark.Lifetime = NumberRange.new(0.16, 0.3)
+			spark.Rate = 80
+			spark.Speed = NumberRange.new(0.5, 2)
+			spark.SpreadAngle = Vector2.new(180, 180)
+			spark.LightEmission = 0.8
+			spark.Parent = frontAtt
+
 			local trail = Instance.new("SelectionBox")
 			trail.Color3 = TEMARI_COLOR1
 			trail.LineThickness = 0.04
@@ -2009,8 +2101,11 @@ local function vfxTemariBall(hrp, count, spread)
 				ball.Size = Vector3.new(1.4 - s * 0.04, 1.4 - s * 0.04, 1.4 - s * 0.04)
 				task.wait(0.03)
 			end
+			spark.Enabled = false
+			trailFx.Enabled = false
 			trail:Destroy()
-			ball:Destroy()
+			TweenService:Create(ball, TweenInfo.new(0.12), {Transparency = 1, Size = Vector3.new(0.2, 0.2, 0.2)}):Play()
+			Debris:AddItem(ball, 0.18)
 		end)
 		task.wait(0.06)
 	end
@@ -2305,6 +2400,9 @@ task.spawn(function()
 			end
 			if result.Inventory then
 				_clientInventory = result.Inventory
+			end
+			if result.Mastery then
+				cacheMastery(result.Mastery)
 			end
 			local styleToUse = (result.EquippedStyle and result.EquippedStyle ~= "") and result.EquippedStyle or _currentFaction
 			if styleToUse ~= "" then
@@ -2674,18 +2772,20 @@ local currentMasteryStyleId = ""
 local function getActiveStyleId()
 	local qSkill = skillSlots["Q"]
 	if qSkill then
-		return qSkill.Id
+		return qSkill.Style or _currentStyle
 	end
-	return ""
+	return _currentStyle
 end
 
 local function getStyleDisplayName(styleId)
-	local skill = SkillSystemModule.getSkill(styleId)
-	if not skill then return styleId end
-	if skill.Faction == "Slayer" then
+	if styleId == "WaterBreathing" then
 		return "Water Breathing"
-	elseif skill.Faction == "Demon" then
-		return "Demon Art"
+	elseif styleId == "FlameBreathing" then
+		return "Flame Breathing"
+	elseif styleId == "DemonArts" then
+		return "Blood Demon Art"
+	elseif styleId == "TemariDemonArts" then
+		return "Temari Demon Art"
 	end
 	return styleId
 end
@@ -2793,13 +2893,15 @@ if not MasteryChangedRemote then
 end
 
 if MasteryChangedRemote then
-	MasteryChangedRemote.OnClientEvent:Connect(function(styleId, level, _xp, _xpNeeded, _totalXP, levelsGained)
+	MasteryChangedRemote.OnClientEvent:Connect(function(styleId, level, xp, xpNeeded, totalXP, levelsGained)
+		cacheMasteryEntry(styleId, level, xp, xpNeeded, totalXP)
+		currentMasteryStyleId = getActiveStyleId()
 		if styleId == getActiveStyleId() or styleId == currentMasteryStyleId then
 			if levelsGained > 0 then
 				local displayName = getStyleDisplayName(styleId)
 				queueMilestone(
-					displayName .. " — Mastery " .. level .. " reached",
-					"New scrolls available."
+					displayName .. " - Mastery " .. level .. " reached",
+					"New forms may be available."
 				)
 			end
 		end

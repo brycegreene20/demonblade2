@@ -9,20 +9,36 @@ local DemonTemplate = Assets:WaitForChild("ForestDemon")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
 local CombatModule = require(Modules:WaitForChild("CombatModule"))
-local SkillSystemModule = require(Modules:WaitForChild("SkillSystemModule"))
 
 local MASTERY_KILL_REWARDS = {
 	[1] = 3, [2] = 5, [3] = 8, [4] = 12, [5] = 12,
 	[6] = 20, [7] = 20, [8] = 20, [9] = 20, [10] = 20,
 }
 
-local ATTACK_RADIUS = 12
+local AGGRO_RADIUS = 55
+local ATTACK_RADIUS = 8
 local ATTACK_COOLDOWN = 1.5
 local ATTACK_WINDUP = CombatModule.NPC_ATTACK_WINDUP
 local RESPAWN_TIME = 15
 local AI_TICK = 0.5
+local MOVE_SPEED = 14
+local LEASH_DISTANCE = 90
 local DEMON_HALF_HEIGHT = 3
 local FALLBACK_Y = 0.5
+local DEBUG_DEMON_SPAWNS = false
+local DEBUG_DEMON_REWARDS = false
+
+local function debugSpawnLog(message)
+	if DEBUG_DEMON_SPAWNS then
+		print("[DemonSpawner] " .. message)
+	end
+end
+
+local function debugRewardLog(message)
+	if DEBUG_DEMON_REWARDS then
+		print("[DemonSpawner] " .. message)
+	end
+end
 
 local DEMON_STATS = {
 	{ level = 1,  hp = 80,   damage = 5,   xp = 30  },
@@ -166,6 +182,43 @@ local function createHPBar(parent, name, level)
 	return billboard, fill, damageFill, label
 end
 
+local function spawnDemonAttackVFX(demon)
+	local root = demon:FindFirstChild("HumanoidRootPart") or demon.PrimaryPart
+	if not root then return end
+
+	local slash = Instance.new("Part")
+	slash.Name = "DemonAttackSlash"
+	slash.Size = Vector3.new(0.15, 5, 5)
+	slash.CFrame = root.CFrame * CFrame.new(0, 0, -3) * CFrame.Angles(0, 0, math.rad(35))
+	slash.Anchored = true
+	slash.CanCollide = false
+	slash.CanQuery = false
+	slash.CanTouch = false
+	slash.CastShadow = false
+	slash.Material = Enum.Material.Neon
+	slash.Color = Color3.fromRGB(190, 20, 45)
+	slash.Transparency = 0.15
+	slash.Parent = workspace
+
+	TweenService:Create(slash, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.05, 8, 8),
+		Transparency = 1,
+		CFrame = root.CFrame * CFrame.new(0, 0, -4) * CFrame.Angles(0, 0, math.rad(-35)),
+	}):Play()
+
+	task.delay(0.35, function()
+		if slash and slash.Parent then
+			slash:Destroy()
+		end
+	end)
+end
+
+local function isSafePosition(position)
+	-- selene: allow(global_usage)
+	local zoneServer = shared and shared.ZoneServer
+	return zoneServer and zoneServer.isSafePosition and zoneServer.isSafePosition(position) == true
+end
+
 local function findPlayerInRadius(position, radius)
 	local closest = nil
 	local closestDist = radius
@@ -177,6 +230,7 @@ local function findPlayerInRadius(position, radius)
 		if not humanoid or humanoid.Health <= 0 then continue end
 		local hrp = character:FindFirstChild("HumanoidRootPart")
 		if not hrp then continue end
+		if isSafePosition(hrp.Position) then continue end
 
 		local dist = (hrp.Position - position).Magnitude
 		if dist < closestDist then
@@ -261,10 +315,10 @@ local function spawnDemon(spawnData)
 	hrp.CFrame = spawnCFrame
 	streamAnchor.CFrame = spawnCFrame
 
-	print("[DemonSpawner] Parts repositioned for Lv." .. level .. " at " .. tostring(spawnCFrame.Position))
+	debugSpawnLog("Parts repositioned for Lv." .. level .. " at " .. tostring(spawnCFrame.Position))
 	for _, part in demon:GetDescendants() do
 		if part:IsA("BasePart") then
-			print("[DemonSpawner]   " .. part.Name .. " at " .. tostring(part.Position))
+			debugSpawnLog("  " .. part.Name .. " at " .. tostring(part.Position))
 		end
 	end
 
@@ -370,32 +424,33 @@ local function spawnDemon(spawnData)
 		if lastAttackerId then
 			local attacker = Players:GetPlayerByUserId(lastAttackerId)
 			if attacker then
-				PlayerDataModule.addXP(attacker, stats.xp)
-				print("[DemonSpawner] Awarded " .. stats.xp .. " XP to " .. attacker.Name)
+				local rewardPlayers = CombatModule.getRewardPlayers(demon, attacker, 160)
+				for _, rewardedPlayer in rewardPlayers do
+					PlayerDataModule.addXP(rewardedPlayer, stats.xp)
+					debugRewardLog("Awarded " .. stats.xp .. " XP to " .. rewardedPlayer.Name)
 
-				-- selene: allow(global_usage)
-				if shared.QuestServer and shared.QuestServer.onEnemyKilled then
 					-- selene: allow(global_usage)
-					shared.QuestServer.onEnemyKilled(attacker, "ForestDemon")
-				end
-
-				-- selene: allow(global_usage)
-				if shared.BountyServer and shared.BountyServer.onEnemyKilled then
-					-- selene: allow(global_usage)
-					shared.BountyServer.onEnemyKilled(attacker, "ForestDemon", level)
-				end
-
-				local data = PlayerDataModule.getData(attacker)
-				if data and data.Faction ~= "" then
-					local rewardXP = MASTERY_KILL_REWARDS[level] or 3
-					local factionSkills = SkillSystemModule.getSkillsForFaction(data.Faction)
-					for _, skill in factionSkills do
-						PlayerDataModule.addMasteryXP(attacker, skill.Id, rewardXP)
+					if shared.QuestServer and shared.QuestServer.onEnemyKilled then
+						-- selene: allow(global_usage)
+						shared.QuestServer.onEnemyKilled(rewardedPlayer, "ForestDemon")
 					end
-					print("[DemonSpawner] Awarded " .. rewardXP .. " mastery XP per equipped style to " .. attacker.Name)
+
+					-- selene: allow(global_usage)
+					if shared.BountyServer and shared.BountyServer.onEnemyKilled then
+						-- selene: allow(global_usage)
+						shared.BountyServer.onEnemyKilled(rewardedPlayer, "ForestDemon", level)
+					end
+
+					local data = PlayerDataModule.getData(rewardedPlayer)
+					if data and data.EquippedStyle and data.EquippedStyle ~= "" then
+						local rewardXP = MASTERY_KILL_REWARDS[level] or 3
+						PlayerDataModule.addMasteryXP(rewardedPlayer, data.EquippedStyle, rewardXP)
+						debugRewardLog("Awarded " .. rewardXP .. " mastery XP to " .. rewardedPlayer.Name .. " for style " .. data.EquippedStyle)
+					end
 				end
 			end
 		end
+		CombatModule.clearDamageContributors(demon)
 
 		hpLabel.Text = "DEFEATED"
 		fill.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
@@ -429,7 +484,7 @@ local function spawnDemon(spawnData)
 	end)
 
 	table.insert(activeDemons, demonState)
-	print("[DemonSpawner] Spawned Lv." .. level .. " sentinel demon at " .. tostring(spawnCFrame.Position))
+	debugSpawnLog("Spawned Lv." .. level .. " sentinel demon at " .. tostring(spawnCFrame.Position))
 	return demonState
 end
 
@@ -455,15 +510,33 @@ task.spawn(function()
 			end
 
 			local spawnPos = demonState.spawnCFrame.Position
-			local closestPlayer, _dist = findPlayerInRadius(spawnPos, ATTACK_RADIUS)
+			local currentPos = hrp.Position
+			local closestPlayer, dist = findPlayerInRadius(currentPos, AGGRO_RADIUS)
 
 			if closestPlayer then
 				local targetHRP = closestPlayer.Character and closestPlayer.Character:FindFirstChild("HumanoidRootPart")
 				if targetHRP then
-					local direction = targetHRP.Position - spawnPos
+					local targetPos = targetHRP.Position
+					local direction = targetPos - currentPos
 					local flatDir = Vector3.new(direction.X, 0, direction.Z)
 					if flatDir.Magnitude > 0.1 then
-						local lookCFrame = CFrame.lookAt(spawnPos, spawnPos + flatDir.Unit)
+						local nextPos = currentPos
+						if dist > ATTACK_RADIUS then
+							nextPos = currentPos + flatDir.Unit * math.min(MOVE_SPEED * AI_TICK, dist - ATTACK_RADIUS)
+						end
+
+						if (nextPos - spawnPos).Magnitude > LEASH_DISTANCE or isSafePosition(nextPos) then
+							demonState.aiState = "returning"
+							local homeDir = spawnPos - currentPos
+							if homeDir.Magnitude > 0.5 then
+								local flatHome = Vector3.new(homeDir.X, 0, homeDir.Z).Unit
+								nextPos = currentPos + flatHome * math.min(MOVE_SPEED * AI_TICK, homeDir.Magnitude)
+							else
+								nextPos = spawnPos
+							end
+						end
+
+						local lookCFrame = CFrame.lookAt(nextPos, nextPos + flatDir.Unit)
 						demon:PivotTo(lookCFrame)
 					end
 				end
@@ -471,9 +544,10 @@ task.spawn(function()
 				demonState.aiState = "attacking"
 
 				local now = tick()
-				if now - demonState.lastAttack >= ATTACK_COOLDOWN and not demonState.isAttacking then
+				if dist <= ATTACK_RADIUS and now - demonState.lastAttack >= ATTACK_COOLDOWN and not demonState.isAttacking then
 					demonState.lastAttack = now
 					demonState.isAttacking = true
+					spawnDemonAttackVFX(demon)
 
 					local debugMode = false
 					local debugVal = demon:FindFirstChild("DebugHitbox")
@@ -491,7 +565,15 @@ task.spawn(function()
 					end)
 				end
 			else
-				if demonState.aiState ~= "idle" then
+				local homeDir = spawnPos - currentPos
+				if homeDir.Magnitude > 1 then
+					demonState.aiState = "returning"
+					local flatHome = Vector3.new(homeDir.X, 0, homeDir.Z)
+					if flatHome.Magnitude > 0.1 then
+						local nextPos = currentPos + flatHome.Unit * math.min(MOVE_SPEED * AI_TICK, homeDir.Magnitude)
+						demon:PivotTo(CFrame.lookAt(nextPos, nextPos + flatHome.Unit))
+					end
+				else
 					demonState.aiState = "idle"
 					demon:PivotTo(demonState.spawnCFrame)
 				end

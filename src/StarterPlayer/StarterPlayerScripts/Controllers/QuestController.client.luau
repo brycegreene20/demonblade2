@@ -633,6 +633,7 @@ toastDismissBtn.Parent = toastFrame
 
 local toastQuestId = nil
 local toastDismissThread = nil
+local TOAST_AUTO_DISMISS_SECONDS = 6.5
 
 local function dismissToast()
 	if toastDismissThread then
@@ -665,7 +666,8 @@ local function showToast(data)
 		Position = UDim2.new(1, -20, 0, 100),
 	}):Play()
 
-	toastDismissThread = task.delay(10, function()
+	toastDismissThread = task.delay(TOAST_AUTO_DISMISS_SECONDS, function()
+		toastDismissThread = nil
 		dismissToast()
 	end)
 end
