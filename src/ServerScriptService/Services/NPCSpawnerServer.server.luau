@@ -6,6 +6,8 @@ local NPC_CONFIGS = {
 	{
 		id = "QuestNPC_Elder",
 		displayName = "Trainer Urokodaki",
+		roleText = "Training Quests",
+		hasQuestPrompt = true,
 		position = Vector3.new(-10, 3, 8),
 		facingAngle = 45,
 		bodyColors = {
@@ -20,6 +22,8 @@ local NPC_CONFIGS = {
 	{
 		id = "QuestNPC_Scout",
 		displayName = "Merchant Aoi",
+		roleText = "Merchant",
+		hasQuestPrompt = false,
 		position = Vector3.new(8, 3, -12),
 		facingAngle = -30,
 		bodyColors = {
@@ -34,6 +38,8 @@ local NPC_CONFIGS = {
 	{
 		id = "QuestNPC_Officer",
 		displayName = "Corps Officer",
+		roleText = "Demon Quests",
+		hasQuestPrompt = true,
 		position = Vector3.new(-6, 3, -15),
 		facingAngle = 0,
 		bodyColors = {
@@ -153,7 +159,7 @@ local function buildR6Rig(config)
 	return model
 end
 
-local function createNameBillboard(model, displayName)
+local function createNameBillboard(model, displayName, roleText)
 	local head = model:FindFirstChild("Head")
 	if not head then return end
 
@@ -188,7 +194,7 @@ local function createNameBillboard(model, displayName)
 	roleLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
 	roleLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	roleLabel.TextStrokeTransparency = 0.5
-	roleLabel.Text = "Quest Giver"
+	roleLabel.Text = roleText or "Villager"
 	roleLabel.Parent = billboard
 end
 
@@ -243,15 +249,16 @@ for _, config in NPC_CONFIGS do
 	local model = buildR6Rig(config)
 	local rootCFrame = CFrame.new(config.position) * CFrame.Angles(0, math.rad(config.facingAngle), 0)
 
-	createNameBillboard(model, config.displayName)
-	local ring, innerRing = createGlowingRing(model, rootCFrame)
-	createProximityPrompt(model)
+	createNameBillboard(model, config.displayName, config.roleText)
 
-	CollectionService:AddTag(model, "QuestGiver")
+	if config.hasQuestPrompt ~= false then
+		local ring, innerRing = createGlowingRing(model, rootCFrame)
+		createProximityPrompt(model)
+		CollectionService:AddTag(model, "QuestGiver")
+		table.insert(activeRings, { ring = ring, innerRing = innerRing, baseCFrame = ring.CFrame })
+	end
 
 	model.Parent = npcsFolder
-
-	table.insert(activeRings, { ring = ring, innerRing = innerRing, baseCFrame = ring.CFrame })
 
 	print("[NPCSpawner] Spawned " .. config.displayName .. " (" .. config.id .. ") at " .. tostring(config.position))
 end
@@ -271,4 +278,4 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 
-print("[NPCSpawner] Loaded - " .. #NPC_CONFIGS .. " quest giver NPCs spawned")
+print("[NPCSpawner] Loaded - " .. #NPC_CONFIGS .. " NPC(s) spawned")

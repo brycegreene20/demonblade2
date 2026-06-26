@@ -1,6 +1,7 @@
 local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local DataStoreModule = {}
 
@@ -9,6 +10,7 @@ local AUTO_SAVE_INTERVAL = 60
 local MAX_RETRIES = 3
 local BASE_RETRY_DELAY = 1
 local MIN_WRITE_INTERVAL = 6
+local AUTO_SAVE_ENABLED = not RunService:IsStudio()
 
 local dataStore = DataStoreService:GetDataStore(STORE_NAME)
 local sessionCache = {}
@@ -178,17 +180,25 @@ function DataStoreModule.cleanup(player)
 	dataLoaded[player] = nil
 end
 
-task.spawn(function()
-	while true do
-		task.wait(AUTO_SAVE_INTERVAL)
-		for _, player in Players:GetPlayers() do
-			if dataLoaded[player] then
-				DataStoreModule.queueSave(player)
+if AUTO_SAVE_ENABLED then
+	task.spawn(function()
+		while true do
+			task.wait(AUTO_SAVE_INTERVAL)
+			local queued = 0
+			for _, player in Players:GetPlayers() do
+				if dataLoaded[player] then
+					DataStoreModule.queueSave(player)
+					queued += 1
+				end
+			end
+			if queued > 0 then
+				print("[DataStoreModule] Auto-save queued for " .. queued .. " player(s)")
 			end
 		end
-		print("[DataStoreModule] Auto-save cycle queued")
-	end
-end)
+	end)
+else
+	print("[DataStoreModule] Periodic auto-save disabled in Studio; save-on-leave remains enabled")
+end
 
 game:BindToClose(function()
 	for _, player in Players:GetPlayers() do

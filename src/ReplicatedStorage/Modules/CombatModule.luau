@@ -28,6 +28,74 @@ CombatModule.HITBOX_OFFSET = 4
 local blockingModels = {}
 local incomingHitTimestamps = {}
 local parryStaggerTargets = {}
+local damageContributors = setmetatable({}, { __mode = "k" })
+
+local CONTRIBUTION_WINDOW = 90
+
+local function isModelInSafeZone(model)
+	local hrp = model and model:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+	-- selene: allow(global_usage)
+	local zoneServer = shared and shared.ZoneServer
+	if zoneServer and zoneServer.isSafePosition then
+		return zoneServer.isSafePosition(hrp.Position) == true
+	end
+	return false
+end
+
+function CombatModule.isModelInSafeZone(model)
+	return isModelInSafeZone(model)
+end
+
+function CombatModule.recordDamageContribution(targetModel, attackerPlayer, amount)
+	if not targetModel or not attackerPlayer then return end
+	local contributors = damageContributors[targetModel]
+	if not contributors then
+		contributors = {}
+		damageContributors[targetModel] = contributors
+	end
+
+	local current = contributors[attackerPlayer] or { damage = 0, lastHit = 0 }
+	current.damage += amount or 0
+	current.lastHit = os.clock()
+	contributors[attackerPlayer] = current
+end
+
+function CombatModule.getRewardPlayers(targetModel, primaryPlayer, maxDistance)
+	local result = {}
+	local seen = {}
+
+	local function addPlayer(player)
+		if not player or seen[player] or not player.Parent then return end
+		if maxDistance and primaryPlayer and primaryPlayer.Character and player.Character then
+			local primaryRoot = primaryPlayer.Character:FindFirstChild("HumanoidRootPart")
+			local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+			if primaryRoot and playerRoot and (primaryRoot.Position - playerRoot.Position).Magnitude > maxDistance then
+				return
+			end
+		end
+		seen[player] = true
+		table.insert(result, player)
+	end
+
+	addPlayer(primaryPlayer)
+
+	local now = os.clock()
+	local contributors = damageContributors[targetModel]
+	if contributors then
+		for player, contribution in contributors do
+			if contribution and now - (contribution.lastHit or 0) <= CONTRIBUTION_WINDOW then
+				addPlayer(player)
+			end
+		end
+	end
+
+	return result
+end
+
+function CombatModule.clearDamageContributors(targetModel)
+	damageContributors[targetModel] = nil
+end
 
 function CombatModule.setBlocking(model, isBlocking)
 	if isBlocking then
@@ -102,6 +170,8 @@ end
 function CombatModule.applyDamage(targetModel, amount, attackerPlayer, isHeavyOrSkill)
 	local humanoid = targetModel:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return false end
+	if isModelInSafeZone(targetModel) then return false end
+	if attackerPlayer and attackerPlayer.Character and isModelInSafeZone(attackerPlayer.Character) then return false end
 
 	local finalAmount = amount
 	if CombatModule.isBlocking(targetModel) then
@@ -126,6 +196,7 @@ function CombatModule.applyDamage(targetModel, amount, attackerPlayer, isHeavyOr
 
 	if attackerPlayer then
 		targetModel:SetAttribute("LastAttacker", attackerPlayer.UserId)
+		CombatModule.recordDamageContribution(targetModel, attackerPlayer, finalAmount)
 	end
 
 	local targetHRP = targetModel:FindFirstChild("HumanoidRootPart")
@@ -143,6 +214,8 @@ CombatModule.NPC_ATTACK_WINDUP = 0.4
 function CombatModule.applyDamageFromNPC(targetModel, amount, attackerModel)
 	local humanoid = targetModel:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return false end
+	if isModelInSafeZone(targetModel) then return false end
+	if attackerModel and isModelInSafeZone(attackerModel) then return false end
 
 	local finalAmount = amount
 	if CombatModule.isBlocking(targetModel) then

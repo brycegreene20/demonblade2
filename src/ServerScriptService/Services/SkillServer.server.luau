@@ -9,19 +9,50 @@ local DamageDealt = Remotes:WaitForChild("DamageDealt")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
 local SkillSystemModule = require(Modules:WaitForChild("SkillSystemModule"))
+local CombatModule = require(Modules:WaitForChild("CombatModule"))
 
 local SKILL_RATE_LIMIT = 0.3
+local REJECTION_LOG_COOLDOWN = 5
 local lastSkillUse = {}
+local lastRejectionLog = {}
 
 Players.PlayerAdded:Connect(function(player)
 	SkillSystemModule.initPlayer(player)
 	lastSkillUse[player] = 0
+	lastRejectionLog[player] = {}
 end)
 
 Players.PlayerRemoving:Connect(function(player)
 	SkillSystemModule.cleanupPlayer(player)
 	lastSkillUse[player] = nil
+	lastRejectionLog[player] = nil
 end)
+
+local function logRejectedSkillUse(player, skillId, equippedStyle, reason)
+	local playerLogs = lastRejectionLog[player]
+	if not playerLogs then
+		playerLogs = {}
+		lastRejectionLog[player] = playerLogs
+	end
+
+	local key = skillId .. ":" .. tostring(reason)
+	local now = os.clock()
+	if now - (playerLogs[key] or 0) < REJECTION_LOG_COOLDOWN then
+		return
+	end
+	playerLogs[key] = now
+
+	warn(
+		"[SkillServer] Rejected skill use for "
+		.. player.Name
+		.. ": skill="
+		.. skillId
+		.. ", equippedStyle="
+		.. tostring(equippedStyle)
+		.. ", reason="
+		.. tostring(reason)
+	)
+end
 
 local function applySkillDamage(player, skill, hitIndex)
 	local character = player.Character
@@ -43,6 +74,9 @@ local function applySkillDamage(player, skill, hitIndex)
 	for _, target in hitCharacters do
 		local humanoid = target:FindFirstChildOfClass("Humanoid")
 		if humanoid and humanoid.Health > 0 then
+			if CombatModule.isModelInSafeZone(target) or CombatModule.isModelInSafeZone(character) then
+				continue
+			end
 			local finalDmg = damage
 			local targetPlayer = game:GetService("Players"):GetPlayerFromCharacter(target)
 			if targetPlayer then
@@ -53,6 +87,7 @@ local function applySkillDamage(player, skill, hitIndex)
 			humanoid:TakeDamage(finalDmg)
 
 			target:SetAttribute("LastAttacker", player.UserId)
+			CombatModule.recordDamageContribution(target, player, finalDmg)
 
 			local targetHRP = target:FindFirstChild("HumanoidRootPart")
 			local hitPos = targetHRP and targetHRP.Position or Vector3.zero
@@ -64,6 +99,9 @@ local function applySkillDamage(player, skill, hitIndex)
 	if #hitCharacters > 0 then
 		local data = PlayerDataModule.getData(player)
 		local equippedTitle = data and (data.EquippedTitle or "")
+		if data and data.EquippedStyle and data.EquippedStyle ~= "" then
+			PlayerDataModule.addMasteryXP(player, data.EquippedStyle, math.max(1, math.floor(skill.BaseDamage / 20)))
+		end
 		if equippedTitle ~= "" then
 			local xpPerHit = math.floor(10 + skill.BaseDamage * 0.1)
 			PlayerDataModule.addTitleXP(player, equippedTitle, xpPerHit * #hitCharacters)
@@ -84,8 +122,11 @@ UseSkillRemote.OnServerEvent:Connect(function(player, skillId)
 	local data = PlayerDataModule.getData(player)
 	if not data then return end
 
-	local canUse, _reason = SkillSystemModule.canUseSkill(player, skillId, data)
-	if not canUse then return end
+	local canUse, reason = SkillSystemModule.canUseSkill(player, skillId, data)
+	if not canUse then
+		logRejectedSkillUse(player, skillId, data.EquippedStyle, reason)
+		return
+	end
 
 	local skill = SkillSystemModule.getSkill(skillId)
 	if not skill then return end

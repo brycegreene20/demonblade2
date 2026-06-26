@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a reproducible DemonBlade2 bug
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Local Rojo
+        - Staging
+        - Production
+    validations:
+      required: true
+  - type: input
+    id: branch
+    attributes:
+      label: Branch or commit
+      placeholder: dev, main, fix/my-branch, or commit SHA
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Repro steps
+      description: Include exact clicks, keys, titles, items, skills, and time waited.
+      placeholder: |
+        1. Start local Rojo session
+        2. Equip ...
+        3. Press ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Frequency
+      options:
+        - Always
+        - Often
+        - Sometimes
+        - Once
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Studio output logs
+      description: Paste relevant Output lines from Roblox Studio.
+      render: text
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshot or video
+      description: Drag files here for UI, animation, VFX, or positioning bugs.

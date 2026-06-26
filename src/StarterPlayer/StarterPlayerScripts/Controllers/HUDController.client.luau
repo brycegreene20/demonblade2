@@ -4,9 +4,16 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local SoundService = game:GetService("SoundService")
 
-local DEBUG_HUD = true
+local DEBUG_HUD = false
+local DEBUG_HUD_VERBOSE = false
 local function hudLog(message)
 	if DEBUG_HUD then
+		print("[HUDController] " .. message)
+	end
+end
+
+local function hudTrace(message)
+	if DEBUG_HUD and DEBUG_HUD_VERBOSE then
 		print("[HUDController] " .. message)
 	end
 end
@@ -218,7 +225,7 @@ hpLabel.Text = "HP"
 hpLabel.Parent = container
 
 local hpBar = createBar("HPBar", container, PADDING + 14, BAR_HEIGHT, HP_COLOR, HP_BG, true)
-local staminaBar = createBar("StaminaBar", container, PADDING + 14 + BAR_HEIGHT + 4, STAMINA_BAR_HEIGHT, STAMINA_COLOR, STAMINA_BG, false)
+local staminaBar = createBar("StaminaBar", container, PADDING + 14 + BAR_HEIGHT + 4, STAMINA_BAR_HEIGHT, STAMINA_COLOR, STAMINA_BG, true)
 
 local masterySectionY = PADDING + 14 + BAR_HEIGHT + 4 + STAMINA_BAR_HEIGHT + 5
 
@@ -403,6 +410,10 @@ local function updateStamina(current, max)
 	else
 		staminaBar.Fill.BackgroundColor3 = STAMINA_COLOR
 	end
+
+	if staminaBar.Label then
+		staminaBar.Label.Text = math.floor(current) .. " / " .. math.floor(max)
+	end
 end
 
 local TWEEN_XP = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -431,11 +442,11 @@ local function syncFromCharacter(reason)
 	local character = LocalPlayer.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then
-		hudLog("Character sync skipped (" .. reason .. "): humanoid not ready")
+		hudTrace("Character sync skipped (" .. reason .. "): humanoid not ready")
 		return
 	end
 
-	hudLog("Character sync (" .. reason .. "): hp=" .. math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth))
+	hudTrace("Character sync (" .. reason .. "): hp=" .. math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth))
 	updateHP(humanoid.Health, humanoid.MaxHealth)
 end
 
@@ -443,7 +454,7 @@ local function reportHudState(reason)
 	local parentName = screenGui.Parent and screenGui.Parent:GetFullName() or "nil"
 	local absPos = container.AbsolutePosition
 	local absSize = container.AbsoluteSize
-	hudLog(
+	hudTrace(
 		reason
 			.. " state: guiParent=" .. parentName
 			.. ", enabled=" .. tostring(screenGui.Enabled)
@@ -456,16 +467,37 @@ local function reportHudState(reason)
 end
 
 local function forceHudVisible(reason)
+	local repaired = false
 	if screenGui.Parent ~= PlayerGui then
 		screenGui.Parent = PlayerGui
+		repaired = true
 	end
-	screenGui.Enabled = true
-	screenGui.DisplayOrder = 30
-	container.Parent = screenGui
-	container.Visible = true
-	container.Position = UDim2.new(0, 20, 1, -BOTTOM_OFFSET)
-	container.AnchorPoint = Vector2.new(0, 1)
-	reportHudState(reason)
+	if not screenGui.Enabled then
+		screenGui.Enabled = true
+		repaired = true
+	end
+	if screenGui.DisplayOrder ~= 30 then
+		screenGui.DisplayOrder = 30
+		repaired = true
+	end
+	if container.Parent ~= screenGui then
+		container.Parent = screenGui
+		repaired = true
+	end
+	if not container.Visible then
+		container.Visible = true
+		repaired = true
+	end
+	if container.Position ~= UDim2.new(0, 20, 1, -BOTTOM_OFFSET) then
+		container.Position = UDim2.new(0, 20, 1, -BOTTOM_OFFSET)
+	end
+	if container.AnchorPoint ~= Vector2.new(0, 1) then
+		container.AnchorPoint = Vector2.new(0, 1)
+	end
+	if repaired then
+		hudLog("HUD visibility repaired from " .. tostring(reason))
+		reportHudState(reason)
+	end
 end
 
 updateHP(150, 150)
@@ -1103,7 +1135,7 @@ local HUD_ACTION_ICON_SIZE = 32
 local HUD_ACTION_ICON_GAP = 8
 local HUD_ACTION_ICON_BASE_X = 20
 local HUD_ACTION_ICON_Y = -BOTTOM_OFFSET - container.Size.Y.Offset - 6
-local HUD_ACTION_PANEL_X = HUD_ACTION_ICON_BASE_X + (HUD_ACTION_ICON_SIZE * 2) + (HUD_ACTION_ICON_GAP * 2) + 10
+local HUD_ACTION_PANEL_X = HUD_ACTION_ICON_BASE_X + (HUD_ACTION_ICON_SIZE * 3) + (HUD_ACTION_ICON_GAP * 3) + 10
 
 local statHint = Instance.new("TextLabel")
 statHint.Name = "StatHint"
@@ -1124,7 +1156,7 @@ statHint.Parent = screenGui
 local function updateStatHint()
 	if cachedStatPoints > 0 then
 		local mode = ReplicatedStorage:FindFirstChild("InputMode") and ReplicatedStorage.InputMode.Value
-		local key = (mode == "Xbox" or mode == "PlayStation") and "DPad Up" or "P"
+		local key = (mode == "Xbox" or mode == "PlayStation") and "Stats icon" or "P"
 		statHint.Text = cachedStatPoints .. " stat point" .. (cachedStatPoints > 1 and "s" or "") .. " available [" .. key .. "]"
 		statHint.Visible = true
 	else
@@ -1260,6 +1292,85 @@ local function updateStatIconPulse()
 	end
 end
 
+-- ==================== TITLE ICON BUTTON ====================
+local titleIconBtn = Instance.new("TextButton")
+do
+	local btn = titleIconBtn
+	btn.Name = "TitleIconBtn"
+	btn.Size = UDim2.fromOffset(STAT_ICON_SIZE, STAT_ICON_SIZE)
+	btn.Position = UDim2.new(
+		0, HUD_ACTION_ICON_BASE_X + STAT_ICON_SIZE + HUD_ACTION_ICON_GAP,
+		1, HUD_ACTION_ICON_Y
+	)
+	btn.AnchorPoint = Vector2.new(0, 1)
+	btn.BackgroundColor3 = Color3.fromRGB(20, 24, 32)
+	btn.BackgroundTransparency = 0.2
+	btn.BorderSizePixel = 0
+	btn.Text = "T"
+	btn.TextColor3 = GOLD_COLOR
+	btn.TextSize = 16
+	btn.Font = Enum.Font.GothamBold
+	btn.AutoButtonColor = false
+	btn.ZIndex = 6
+	btn.Parent = screenGui
+
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 6)
+	c.Parent = btn
+
+	local s = Instance.new("UIStroke")
+	s.Color = Color3.fromRGB(120, 95, 40)
+	s.Thickness = 1
+	s.Transparency = 0.25
+	s.Parent = btn
+
+	local tt = Instance.new("TextLabel")
+	tt.Name = "Tooltip"
+	tt.Size = UDim2.fromOffset(92, 22)
+	tt.Position = UDim2.new(0.5, 0, 0, -6)
+	tt.AnchorPoint = Vector2.new(0.5, 1)
+	tt.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
+	tt.BackgroundTransparency = 0.15
+	tt.BorderSizePixel = 0
+	tt.Font = Enum.Font.GothamBold
+	tt.TextSize = 11
+	tt.TextColor3 = Color3.fromRGB(220, 210, 160)
+	tt.TextStrokeColor3 = SHADOW_COLOR
+	tt.TextStrokeTransparency = 0.5
+	tt.Text = "Titles"
+	tt.Visible = false
+	tt.ZIndex = 7
+	tt.Parent = btn
+
+	local tc = Instance.new("UICorner")
+	tc.CornerRadius = UDim.new(0, 4)
+	tc.Parent = tt
+
+	btn.MouseEnter:Connect(function()
+		tt.Visible = true
+		TweenService:Create(btn, TweenInfo.new(0.12), {
+			BackgroundColor3 = Color3.fromRGB(35, 40, 55),
+			TextColor3 = Color3.fromRGB(255, 235, 120),
+		}):Play()
+	end)
+
+	btn.MouseLeave:Connect(function()
+		tt.Visible = false
+		TweenService:Create(btn, TweenInfo.new(0.12), {
+			BackgroundColor3 = Color3.fromRGB(20, 24, 32),
+			TextColor3 = GOLD_COLOR,
+		}):Play()
+	end)
+
+	btn.Activated:Connect(function()
+		if showTitlePanel then
+			showTitlePanel()
+		else
+			warn("[HUDController] Title icon pressed before title panel was ready")
+		end
+	end)
+end
+
 -- ==================== INVENTORY ICON BUTTON ====================
 local toggleInventoryPanel -- forward declaration; defined after the panel is built
 local invIconBadge
@@ -1269,7 +1380,7 @@ do
 	btn.Name = "InventoryIconBtn"
 	btn.Size = UDim2.fromOffset(STAT_ICON_SIZE, STAT_ICON_SIZE)
 	btn.Position = UDim2.new(
-		0, HUD_ACTION_ICON_BASE_X + STAT_ICON_SIZE + HUD_ACTION_ICON_GAP,
+		0, HUD_ACTION_ICON_BASE_X + (STAT_ICON_SIZE + HUD_ACTION_ICON_GAP) * 2,
 		1, HUD_ACTION_ICON_Y
 	)
 	btn.AnchorPoint = Vector2.new(0, 1)
@@ -1672,6 +1783,7 @@ end
 
 -- ==================== ERROR BANNER ====================
 local DataLoadError = Remotes:WaitForChild("DataLoadError")
+local ZoneChangedRemote = Remotes:FindFirstChild("ZoneChanged")
 
 local errorBanner = Instance.new("Frame")
 errorBanner.Name = "ErrorBanner"
@@ -1722,15 +1834,43 @@ errorText.Text = "Save data could not be loaded. Playing with default data."
 errorText.ZIndex = 21
 errorText.Parent = errorBanner
 
+local safeZoneBanner = Instance.new("TextLabel")
+safeZoneBanner.Name = "SafeZoneBanner"
+safeZoneBanner.Size = UDim2.fromOffset(220, 30)
+safeZoneBanner.Position = UDim2.new(0.5, 0, 0, 18)
+safeZoneBanner.AnchorPoint = Vector2.new(0.5, 0)
+safeZoneBanner.BackgroundColor3 = Color3.fromRGB(20, 60, 90)
+safeZoneBanner.BackgroundTransparency = 0.18
+safeZoneBanner.BorderSizePixel = 0
+safeZoneBanner.Font = Enum.Font.GothamBold
+safeZoneBanner.TextSize = 14
+safeZoneBanner.TextColor3 = Color3.fromRGB(195, 240, 255)
+safeZoneBanner.TextStrokeColor3 = SHADOW_COLOR
+safeZoneBanner.TextStrokeTransparency = 0.45
+safeZoneBanner.Text = "SAFE ZONE"
+safeZoneBanner.Visible = false
+safeZoneBanner.ZIndex = 18
+safeZoneBanner.Parent = screenGui
+do
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 8)
+	c.Parent = safeZoneBanner
+	local s = Instance.new("UIStroke")
+	s.Color = Color3.fromRGB(90, 200, 255)
+	s.Thickness = 1
+	s.Transparency = 0.25
+	s.Parent = safeZoneBanner
+end
+
 -- ==================== EVENT CONNECTIONS ====================
 HPChanged.OnClientEvent:Connect(function(hp, maxHp)
-	hudLog("HPChanged received: " .. tostring(hp) .. "/" .. tostring(maxHp))
+	hudTrace("HPChanged received: " .. tostring(hp) .. "/" .. tostring(maxHp))
 	forceHudVisible("HPChanged")
 	updateHP(hp, maxHp)
 end)
 
 StaminaChanged.OnClientEvent:Connect(function(stamina, maxStam)
-	hudLog("StaminaChanged received: " .. tostring(stamina) .. "/" .. tostring(maxStam))
+	hudTrace("StaminaChanged received: " .. tostring(stamina) .. "/" .. tostring(maxStam))
 	updateStamina(stamina, maxStam)
 end)
 
@@ -1759,7 +1899,8 @@ end)
 StatPointsChanged.OnClientEvent:Connect(function(data)
 	if typeof(data) == "table" then
 		cachedStatPoints = data.StatPoints or 0
-		cachedFaction = data.Faction or ""
+		cachedFaction = data.TechniqueFaction or data.Faction or ""
+		cachedEquippedStyle = data.EquippedStyle or cachedEquippedStyle
 		cachedStatData = data
 		cachedLastRespecTime = data.lastRespecTime or 0
 	end
@@ -1800,6 +1941,17 @@ DataLoadError.OnClientEvent:Connect(function()
 	end)
 end)
 
+if ZoneChangedRemote then
+	ZoneChangedRemote.OnClientEvent:Connect(function(newZone)
+		local inSafeZone = newZone == "SafeZone"
+		safeZoneBanner.Visible = inSafeZone
+		if inSafeZone then
+			safeZoneBanner.TextTransparency = 1
+			TweenService:Create(safeZoneBanner, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
+		end
+	end)
+end
+
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if titlePanelShowing and hideTitlePanel and (
@@ -1811,7 +1963,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		hideTitlePanel()
 		return
 	end
-	if input.KeyCode == Enum.KeyCode.P or input.KeyCode == Enum.KeyCode.DPadUp then
+	if input.KeyCode == Enum.KeyCode.P then
 		toggleStatPanel()
 	end
 end)
@@ -2465,11 +2617,11 @@ local InputModeValue = ReplicatedStorage:WaitForChild("InputMode")
 local function updateHUDPrompts()
 	local mode = InputModeValue.Value
 	local isGamepad = (mode == "Xbox" or mode == "PlayStation")
-	hintLabel.Text = isGamepad and "Press [DPad Up] to close" or "Press [P] to close"
+	hintLabel.Text = isGamepad and "Use the stats icon to close" or "Press [P] to close"
 	lungeKeyLabel.Text = isGamepad and "L3" or "SHIFT"
 
 	if cachedStatPoints > 0 then
-		local key = isGamepad and "DPad Up" or "P"
+		local key = isGamepad and "Stats icon" or "P"
 		statHint.Text = cachedStatPoints .. " stat point" .. (cachedStatPoints > 1 and "s" or "") .. " available [" .. key .. "]"
 	end
 end
@@ -2493,20 +2645,47 @@ local function initMasteryBarSystem()
 	local currentMasteryStyleId = ""
 	local currentMasteryLevel = 0
 	local currentMasteryXP = 0
-	local currentMasteryXPNeeded = 100
+	local currentMasteryXPNeeded = 30
 	local masteryEquipped = false
+	local masteryCache = {}
 	local MASTERY_TWEEN = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 	local MASTERY_FLASH_TWEEN = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 	local function getActiveStyleFromSkills(faction)
-		local lookup = (cachedEquippedStyle ~= "" and cachedEquippedStyle) or faction
+		if cachedEquippedStyle ~= "" then
+			return cachedEquippedStyle
+		end
+		local lookup = faction
 		for _, slot in {"Q", "E", "R", "F", "V"} do
 			local skill = SkillSystemModule.getSkillForSlot(lookup, slot)
 			if skill then
-				return skill.Id
+				return skill.Style or ""
 			end
 		end
 		return ""
+	end
+
+	local function getMasteryXPNeeded(level)
+		return math.floor(30 * ((level or 1) ^ 1.25))
+	end
+
+	local function setDisplayedMastery(styleId)
+		if typeof(styleId) ~= "string" or styleId == "" then
+			masteryEquipped = false
+			currentMasteryStyleId = ""
+			currentMasteryLevel = 0
+			currentMasteryXP = 0
+			currentMasteryXPNeeded = 30
+			return
+		end
+
+		local mastery = masteryCache[styleId]
+		local level = mastery and (mastery.Level or 1) or 1
+		currentMasteryStyleId = styleId
+		currentMasteryLevel = level
+		currentMasteryXP = mastery and (mastery.XP or 0) or 0
+		currentMasteryXPNeeded = mastery and (mastery.XPNeeded or getMasteryXPNeeded(level)) or getMasteryXPNeeded(level)
+		masteryEquipped = true
 	end
 
 	local function updateMasteryBarUI()
@@ -2528,10 +2707,10 @@ local function initMasteryBarSystem()
 			return
 		end
 
-		local skill = SkillSystemModule.getSkill(currentMasteryStyleId)
+		local skill = SkillSystemModule.getSkillForSlot(currentMasteryStyleId, "Q")
 		local displayName = currentMasteryStyleId
-		if skill then
-			local style = skill.Style or ""
+		local style = currentMasteryStyleId
+		if style ~= "" then
 			if style == "FlameBreathing" then
 				displayName = "Flame Breath"
 				local flameColor1 = Color3.fromRGB(255, 100, 20)
@@ -2544,16 +2723,18 @@ local function initMasteryBarSystem()
 				local temariColor2 = Color3.fromRGB(130, 20, 170)
 				masteryFill.BackgroundColor3 = temariColor1
 				masteryFillGradient.Color = ColorSequence.new(temariColor1, temariColor2)
-			elseif skill.Faction == "Slayer" then
+			elseif skill and skill.Faction == "Slayer" then
 				displayName = "Water Breath"
 				masteryFill.BackgroundColor3 = MASTERY_BREATH_COLOR1
 				masteryFillGradient.Color = ColorSequence.new(MASTERY_BREATH_COLOR1, MASTERY_BREATH_COLOR2)
-			elseif skill.Faction == "Demon" then
+			elseif skill and skill.Faction == "Demon" then
 				displayName = "Blood Demon Art"
 				masteryFill.BackgroundColor3 = MASTERY_DEMON_COLOR1
 				masteryFillGradient.Color = ColorSequence.new(MASTERY_DEMON_COLOR1, MASTERY_DEMON_COLOR2)
 			end
-			currentMasteryFaction = skill.Faction
+			if skill then
+				currentMasteryFaction = skill.Faction
+			end
 		end
 
 		masteryStyleLabel.Text = displayName
@@ -2579,13 +2760,16 @@ local function initMasteryBarSystem()
 
 	if MasteryChangedRemote then
 		MasteryChangedRemote.OnClientEvent:Connect(function(styleId, level, xp, xpNeeded, _totalXP, levelsGained)
+			if typeof(styleId) == "string" and styleId ~= "" then
+				masteryCache[styleId] = {
+					Level = level or 1,
+					XP = xp or 0,
+					XPNeeded = xpNeeded or getMasteryXPNeeded(level or 1),
+				}
+			end
 			local activeStyle = getActiveStyleFromSkills(currentMasteryFaction)
 			if styleId == activeStyle or styleId == currentMasteryStyleId then
-				currentMasteryLevel = level
-				currentMasteryXP = xp
-				currentMasteryXPNeeded = xpNeeded
-				currentMasteryStyleId = styleId
-				masteryEquipped = true
+				setDisplayedMastery(styleId)
 				updateMasteryBarUI()
 				if levelsGained > 0 then
 					flashMasteryWhite()
@@ -2598,14 +2782,9 @@ local function initMasteryBarSystem()
 		currentMasteryFaction = faction
 		local activeStyle = getActiveStyleFromSkills(faction)
 		if activeStyle ~= "" then
-			currentMasteryStyleId = activeStyle
-			masteryEquipped = true
-			currentMasteryLevel = 0
-			currentMasteryXP = 0
-			currentMasteryXPNeeded = 100
+			setDisplayedMastery(activeStyle)
 		else
-			masteryEquipped = false
-			currentMasteryStyleId = ""
+			setDisplayedMastery("")
 		end
 		updateMasteryBarUI()
 	end)
@@ -2615,11 +2794,7 @@ local function initMasteryBarSystem()
 			if typeof(style) ~= "string" or style == "" then return end
 			local activeStyle = getActiveStyleFromSkills(currentMasteryFaction)
 			if activeStyle ~= "" then
-				currentMasteryStyleId = activeStyle
-				masteryEquipped = true
-				currentMasteryLevel = 0
-				currentMasteryXP = 0
-				currentMasteryXPNeeded = 100
+				setDisplayedMastery(activeStyle)
 				updateMasteryBarUI()
 			end
 		end)
@@ -2632,6 +2807,9 @@ local function initMasteryBarSystem()
 				return GetPlayerData:InvokeServer()
 			end)
 			if ok and result and typeof(result) == "table" then
+				if typeof(result.Mastery) == "table" then
+					masteryCache = result.Mastery
+				end
 				hudLog(
 					"Mastery player data: faction=" .. tostring(result.Faction)
 						.. ", title=" .. tostring(result.EquippedTitle)
@@ -2642,14 +2820,7 @@ local function initMasteryBarSystem()
 					currentMasteryFaction = result.Faction
 					local activeStyle = getActiveStyleFromSkills(result.Faction)
 					if activeStyle ~= "" then
-						currentMasteryStyleId = activeStyle
-						masteryEquipped = true
-						if result.Mastery and result.Mastery[activeStyle] then
-							local m = result.Mastery[activeStyle]
-							currentMasteryLevel = m.Level or 1
-							currentMasteryXP = m.XP or 0
-							currentMasteryXPNeeded = math.floor(100 * ((m.Level or 1) ^ 1.3))
-						end
+						setDisplayedMastery(activeStyle)
 					end
 				elseif result.NeedsTitleSelection or result.Level then
 					hudLog("No faction set; showing title panel from client-side check")

@@ -76,6 +76,10 @@ main -> production place
 
 See [docs/PULL_REQUESTS.md](docs/PULL_REQUESTS.md) for branch naming, PR expectations, checks, and merge rules.
 
+## Bug Tracking
+
+Use GitHub Issues for reproducible bugs and attach Studio Output logs for gameplay, data, inventory, movement, quest, and UI problems. See [docs/BUG_TRACKING.md](docs/BUG_TRACKING.md) for the bug template expectations, labels, and local multiplayer testing steps.
+
 ## Required Local Checks
 
 Before accepting major Rojo changes or opening a PR:
