@@ -100,7 +100,7 @@
 
     "Workspace": {
       "$className": "Workspace",
-      "$ignoreUnknownInstances": true
+      "$path": "src/Workspace"
     },
 
     "ServerStorage": {
