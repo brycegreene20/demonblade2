@@ -752,11 +752,11 @@ task.spawn(function()
 							local bossPos = hrp.Position
 							for _, player in Players:GetPlayers() do
 								local character = player.Character
-								local targetHRP = character and character:FindFirstChild("HumanoidRootPart")
+								local playerHRP = character and character:FindFirstChild("HumanoidRootPart")
 								local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-								if targetHRP and humanoid and humanoid.Health > 0 then
-									local distance = (targetHRP.Position - bossPos).Magnitude
-									if distance <= BOSS_SPECIAL_RADIUS and not isSafePosition(targetHRP.Position) then
+								if playerHRP and humanoid and humanoid.Health > 0 then
+									local distance = (playerHRP.Position - bossPos).Magnitude
+									if distance <= BOSS_SPECIAL_RADIUS and not isSafePosition(playerHRP.Position) then
 										CombatModule.applyDamageFromNPC(character, demonState.stats.damage * 1.4, demon)
 									end
 								end
