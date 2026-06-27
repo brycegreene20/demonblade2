@@ -142,9 +142,9 @@ ParryAttemptRemote.OnServerEvent:Connect(function(player)
 				attackerHumanoid.WalkSpeed = 0
 				task.delay(stunDuration, function()
 					if attackerHumanoid and attackerHumanoid.Parent then
-						local attackerPlayer = Players:GetPlayerFromCharacter(attackerModel)
-						if attackerPlayer then
-							local data = PlayerDataModule.getData(attackerPlayer)
+						local stunRecoverPlayer = Players:GetPlayerFromCharacter(attackerModel)
+						if stunRecoverPlayer then
+							local data = PlayerDataModule.getData(stunRecoverPlayer)
 							attackerHumanoid.WalkSpeed = data and data.WalkSpeed or 24
 						else
 							attackerHumanoid.WalkSpeed = 24

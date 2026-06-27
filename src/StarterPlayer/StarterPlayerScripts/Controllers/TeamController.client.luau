@@ -29,7 +29,7 @@ screenGui.Parent = PlayerGui
 local teamButton = Instance.new("TextButton")
 teamButton.Name = "TeamButton"
 teamButton.Size = UDim2.fromOffset(96, 46)
-teamButton.Position = UDim2.new(0, 18, 0, 116)
+teamButton.Position = UDim2.fromOffset(18, 116)
 teamButton.BackgroundColor3 = Color3.fromRGB(20, 24, 32)
 teamButton.BackgroundTransparency = 0.15
 teamButton.BorderSizePixel = 0
@@ -108,7 +108,7 @@ end
 local panel = Instance.new("Frame")
 panel.Name = "TeamPanel"
 panel.Size = UDim2.fromOffset(350, 390)
-panel.Position = UDim2.new(0, 122, 0, 116)
+panel.Position = UDim2.fromOffset(122, 116)
 panel.BackgroundColor3 = Color3.fromRGB(14, 17, 24)
 panel.BackgroundTransparency = 0.05
 panel.BorderSizePixel = 0

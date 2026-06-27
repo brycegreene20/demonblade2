@@ -86,7 +86,7 @@ function CombatModule.recordDamageContribution(targetModel, attackerPlayer, amou
 	contributors[attackerPlayer] = current
 end
 
-function CombatModule.getRewardPlayers(targetModel, primaryPlayer, maxDistance)
+function CombatModule.getRewardPlayers(_targetModel, primaryPlayer, maxDistance)
 	local result = {}
 	local seen = {}
 
