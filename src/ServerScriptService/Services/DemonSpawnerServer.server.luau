@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
 
 local Assets = ReplicatedStorage:WaitForChild("Assets")
 local DemonTemplate = Assets:WaitForChild("ForestDemon")
@@ -19,6 +20,8 @@ local AGGRO_RADIUS = 55
 local ATTACK_RADIUS = 8
 local ATTACK_COOLDOWN = 1.5
 local ATTACK_WINDUP = CombatModule.NPC_ATTACK_WINDUP
+local BOSS_SPECIAL_COOLDOWN = 7
+local BOSS_SPECIAL_RADIUS = 20
 local RESPAWN_TIME = 15
 local AI_TICK = 0.5
 local MOVE_SPEED = 14
@@ -53,11 +56,18 @@ local DEMON_STATS = {
 	{ level = 10, hp = 550,  damage = 33,  xp = 240 },
 }
 
+local BOSS_STATS = {
+	level = 12,
+	hp = 1600,
+	damage = 45,
+	xp = 600,
+}
+
 local RAW_SPAWNS = {
-	{ x = 10,  z = 26,  level = 1 },
-	{ x = 18,  z = 26,  level = 1 },
-	{ x = 26,  z = 26,  level = 1 },
-	{ x = 34,  z = 26,  level = 1 },
+	{ x = 42,  z = 36,  level = 1 },
+	{ x = 52,  z = 36,  level = 1 },
+	{ x = 62,  z = 36,  level = 1 },
+	{ x = 72,  z = 36,  level = 1 },
 	{ x = 60,  z = -60,  level = 2 },
 	{ x = -50, z = -80,  level = 2 },
 	{ x = 80,  z = -100, level = 3 },
@@ -66,6 +76,7 @@ local RAW_SPAWNS = {
 	{ x = -90, z = -110, level = 5 },
 	{ x = 50,  z = -130, level = 6 },
 	{ x = -40, z = -150, level = 7 },
+	{ x = 128, z = 78,  level = BOSS_STATS.level, boss = true },
 }
 
 local SPAWN_POSITIONS = {}
@@ -73,6 +84,7 @@ for _, raw in RAW_SPAWNS do
 	table.insert(SPAWN_POSITIONS, {
 		pos = CFrame.new(raw.x, FALLBACK_Y + DEMON_HALF_HEIGHT, raw.z),
 		level = raw.level,
+		boss = raw.boss == true,
 	})
 end
 
@@ -182,9 +194,12 @@ local function createHPBar(parent, name, level)
 	return billboard, fill, damageFill, label
 end
 
+local playEnemySFX
+
 local function spawnDemonAttackVFX(demon)
 	local root = demon:FindFirstChild("HumanoidRootPart") or demon.PrimaryPart
 	if not root then return end
+	playEnemySFX(root, "rbxasset://sounds/action_get_up.mp3", 0.34, 0.58)
 
 	local slash = Instance.new("Part")
 	slash.Name = "DemonAttackSlash"
@@ -200,6 +215,28 @@ local function spawnDemonAttackVFX(demon)
 	slash.Transparency = 0.15
 	slash.Parent = workspace
 
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = slash
+	local sparks = Instance.new("ParticleEmitter")
+	sparks.Name = "DemonClawSparks"
+	sparks.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	sparks.Color = ColorSequence.new(Color3.fromRGB(255, 35, 65), Color3.fromRGB(90, 0, 120))
+	sparks.LightEmission = 0.9
+	sparks.Lifetime = NumberRange.new(0.18, 0.35)
+	sparks.Rate = 0
+	sparks.Speed = NumberRange.new(12, 28)
+	sparks.SpreadAngle = Vector2.new(120, 120)
+	sparks.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.45),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	sparks.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	sparks.Parent = attachment
+	sparks:Emit(28)
+
 	TweenService:Create(slash, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		Size = Vector3.new(0.05, 8, 8),
 		Transparency = 1,
@@ -211,6 +248,127 @@ local function spawnDemonAttackVFX(demon)
 			slash:Destroy()
 		end
 	end)
+end
+
+local function spawnBossDemonArtVFX(demon)
+	local root = demon:FindFirstChild("HumanoidRootPart") or demon.PrimaryPart
+	if not root then return end
+	playEnemySFX(root, "rbxasset://sounds/impact_explosion_03.mp3", 0.42, 0.72)
+
+	local orb = Instance.new("Part")
+	orb.Name = "DemonBossBloodArt"
+	orb.Shape = Enum.PartType.Ball
+	orb.Size = Vector3.new(4, 4, 4)
+	orb.CFrame = root.CFrame
+	orb.Anchored = true
+	orb.CanCollide = false
+	orb.CanQuery = false
+	orb.CanTouch = false
+	orb.CastShadow = false
+	orb.Material = Enum.Material.Neon
+	orb.Color = Color3.fromRGB(170, 0, 45)
+	orb.Transparency = 0.25
+	orb.Parent = workspace
+
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = orb
+	local pulse = Instance.new("ParticleEmitter")
+	pulse.Name = "BossBloodArtPulse"
+	pulse.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	pulse.Color = ColorSequence.new(Color3.fromRGB(255, 30, 70), Color3.fromRGB(100, 0, 150))
+	pulse.LightEmission = 0.9
+	pulse.Lifetime = NumberRange.new(0.35, 0.7)
+	pulse.Rate = 0
+	pulse.Speed = NumberRange.new(18, 34)
+	pulse.SpreadAngle = Vector2.new(180, 180)
+	pulse.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.9),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	pulse.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.05),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	pulse.Parent = attachment
+	pulse:Emit(70)
+
+	TweenService:Create(orb, TweenInfo.new(0.75, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(BOSS_SPECIAL_RADIUS * 2, BOSS_SPECIAL_RADIUS * 2, BOSS_SPECIAL_RADIUS * 2),
+		Transparency = 1,
+	}):Play()
+
+	task.delay(0.85, function()
+		if orb and orb.Parent then
+			orb:Destroy()
+		end
+	end)
+end
+
+function playEnemySFX(root, soundId, volume, playbackSpeed)
+	if not root then return end
+	local sound = Instance.new("Sound")
+	sound.SoundId = soundId
+	sound.Volume = volume
+	sound.PlaybackSpeed = playbackSpeed or 1
+	sound.RollOffMaxDistance = 90
+	sound.Parent = root
+	sound:Play()
+	Debris:AddItem(sound, 2)
+end
+
+local function buildPoseRig(demon, root)
+	local poseRig = {
+		Parts = {},
+		Offsets = {},
+	}
+	for _, partName in {"Head", "Left Arm", "Right Arm", "Left Leg", "Right Leg"} do
+		local part = demon:FindFirstChild(partName)
+		if part and part:IsA("BasePart") then
+			poseRig.Parts[partName] = part
+			poseRig.Offsets[partName] = root.CFrame:ToObjectSpace(part.CFrame)
+		end
+	end
+	return poseRig
+end
+
+local function tweenPosePart(demonState, partName, angles, offset)
+	local poseRig = demonState.poseRig
+	if not poseRig then return end
+	local part = poseRig.Parts[partName]
+	local baseOffset = poseRig.Offsets[partName]
+	if not part or not baseOffset then return end
+
+	local moveOffset = offset or Vector3.zero
+	local target = demonState.hrp.CFrame * baseOffset * CFrame.new(moveOffset) * CFrame.Angles(angles.X, angles.Y, angles.Z)
+	TweenService:Create(part, TweenInfo.new(math.max(0.08, AI_TICK * 0.6), Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
+		CFrame = target,
+	}):Play()
+end
+
+local function animateDemonPose(demonState, pose)
+	if not demonState.poseRig then return end
+	demonState.walkPhase = (demonState.walkPhase or 0) + (pose == "walk" and 1.25 or 0.45)
+
+	local phase = demonState.walkPhase
+	local swing = math.sin(phase) * (pose == "walk" and 0.55 or 0.08)
+	local legSwing = math.sin(phase) * (pose == "walk" and 0.38 or 0.04)
+	local headYaw = math.sin(phase * 0.6) * (pose == "idle" and 0.12 or 0.04)
+	local attack = pose == "attack"
+
+	if attack then
+		tweenPosePart(demonState, "Right Arm", Vector3.new(math.rad(-82), math.rad(12), math.rad(28)), Vector3.new(0, 0.1, -0.15))
+		tweenPosePart(demonState, "Left Arm", Vector3.new(math.rad(-45), math.rad(-10), math.rad(-24)), Vector3.new(0, 0.05, -0.05))
+		tweenPosePart(demonState, "Head", Vector3.new(math.rad(-8), 0, 0), Vector3.new(0, 0, -0.08))
+		tweenPosePart(demonState, "Right Leg", Vector3.new(math.rad(12), 0, 0), Vector3.zero)
+		tweenPosePart(demonState, "Left Leg", Vector3.new(math.rad(-10), 0, 0), Vector3.zero)
+		return
+	end
+
+	tweenPosePart(demonState, "Right Arm", Vector3.new(swing, 0, math.rad(8)), Vector3.zero)
+	tweenPosePart(demonState, "Left Arm", Vector3.new(-swing, 0, math.rad(-8)), Vector3.zero)
+	tweenPosePart(demonState, "Right Leg", Vector3.new(-legSwing, 0, 0), Vector3.zero)
+	tweenPosePart(demonState, "Left Leg", Vector3.new(legSwing, 0, 0), Vector3.zero)
+	tweenPosePart(demonState, "Head", Vector3.new(0, headYaw, 0), Vector3.zero)
 end
 
 local function isSafePosition(position)
@@ -245,10 +403,13 @@ end
 local function spawnDemon(spawnData)
 	local spawnCFrame = spawnData.pos
 	local level = spawnData.level
-	local stats = getStatsForLevel(level)
+	local isBoss = spawnData.boss == true
+	local stats = isBoss and BOSS_STATS or getStatsForLevel(level)
+	local enemyType = isBoss and "DemonBoss" or "ForestDemon"
+	local displayName = isBoss and "Demon Boss" or "Forest Demon"
 
 	local demon = DemonTemplate:Clone()
-	demon.Name = "ForestDemon_Lv" .. level
+	demon.Name = isBoss and "DemonBoss" or ("ForestDemon_Lv" .. level)
 
 	local torso = demon:FindFirstChild("Torso")
 	if not torso then
@@ -298,11 +459,21 @@ local function spawnDemon(spawnData)
 
 	demon:SetAttribute("Level", level)
 	demon:SetAttribute("Damage", stats.damage)
-	demon:SetAttribute("EnemyType", "ForestDemon")
+	demon:SetAttribute("EnemyType", enemyType)
 	demon:SetAttribute("XPReward", stats.xp)
+	demon:SetAttribute("IsBoss", isBoss)
 
 	demon.PrimaryPart = torso
 	demon.Parent = demonsFolder
+
+	if isBoss then
+		local ok, scaleErr = pcall(function()
+			demon:ScaleTo(1.85)
+		end)
+		if not ok then
+			warn("[DemonSpawner] Could not scale Demon Boss: " .. tostring(scaleErr))
+		end
+	end
 
 	local pivotOffset = demon:GetPivot()
 	local delta = spawnCFrame * pivotOffset:Inverse()
@@ -326,7 +497,7 @@ local function spawnDemon(spawnData)
 
 	local head = demon:FindFirstChild("Head")
 	local barParent = head or hrp
-	local _billboard, fill, damageFill, hpLabel = createHPBar(barParent, "Forest Demon", level)
+	local _billboard, fill, damageFill, hpLabel = createHPBar(barParent, displayName, level)
 	hpLabel.Text = stats.hp .. " / " .. stats.hp
 
 	local showDebug = demon:FindFirstChild("ShowDebug")
@@ -379,6 +550,11 @@ local function spawnDemon(spawnData)
 		hpLabel = hpLabel,
 		aiState = "idle",
 		isAttacking = false,
+		isBoss = isBoss,
+		lastSpecial = 0,
+		poseRig = buildPoseRig(demon, hrp),
+		walkPhase = 0,
+		attackPoseUntil = 0,
 	}
 
 	local function updateBar()
@@ -411,8 +587,15 @@ local function spawnDemon(spawnData)
 	humanoid.Died:Connect(function()
 		demonState.alive = false
 		demonState.isAttacking = false
+		CollectionService:RemoveTag(demon, "Demon")
 
-		for _, part in demon:GetDescendants() do
+		for _, descendant in demon:GetDescendants() do
+			if descendant:IsA("BillboardGui") then
+				descendant.Enabled = false
+			elseif descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") or descendant:IsA("Beam") then
+				descendant.Enabled = false
+			end
+			local part = descendant
 			if part:IsA("BasePart") then
 				part.CanQuery = false
 				part.CanTouch = false
@@ -432,18 +615,18 @@ local function spawnDemon(spawnData)
 					-- selene: allow(global_usage)
 					if shared.QuestServer and shared.QuestServer.onEnemyKilled then
 						-- selene: allow(global_usage)
-						shared.QuestServer.onEnemyKilled(rewardedPlayer, "ForestDemon")
+						shared.QuestServer.onEnemyKilled(rewardedPlayer, enemyType)
 					end
 
 					-- selene: allow(global_usage)
 					if shared.BountyServer and shared.BountyServer.onEnemyKilled then
 						-- selene: allow(global_usage)
-						shared.BountyServer.onEnemyKilled(rewardedPlayer, "ForestDemon", level)
+						shared.BountyServer.onEnemyKilled(rewardedPlayer, enemyType, level)
 					end
 
 					local data = PlayerDataModule.getData(rewardedPlayer)
 					if data and data.EquippedStyle and data.EquippedStyle ~= "" then
-						local rewardXP = MASTERY_KILL_REWARDS[level] or 3
+						local rewardXP = isBoss and 35 or (MASTERY_KILL_REWARDS[level] or 3)
 						PlayerDataModule.addMasteryXP(rewardedPlayer, data.EquippedStyle, rewardXP)
 						debugRewardLog("Awarded " .. rewardXP .. " mastery XP to " .. rewardedPlayer.Name .. " for style " .. data.EquippedStyle)
 					end
@@ -452,27 +635,21 @@ local function spawnDemon(spawnData)
 		end
 		CombatModule.clearDamageContributors(demon)
 
-		hpLabel.Text = "DEFEATED"
-		fill.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-		TweenService:Create(fill, TweenInfo.new(0.2), {
-			Size = UDim2.fromScale(0, 1),
-		}):Play()
-		TweenService:Create(damageFill, TweenInfo.new(0.3), {
-			Size = UDim2.fromScale(0, 1),
-		}):Play()
-
 		for _, part in demon:GetDescendants() do
 			if part:IsA("BasePart") and part ~= hrp and part ~= streamAnchor then
-				TweenService:Create(part, TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				TweenService:Create(part, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 					Transparency = 1,
 				}):Play()
 			end
 		end
 
-		task.delay(RESPAWN_TIME, function()
+		task.delay(0.65, function()
 			if demon and demon.Parent then
 				demon:Destroy()
 			end
+		end)
+
+		task.delay(RESPAWN_TIME, function()
 			for i, ds in activeDemons do
 				if ds == demonState then
 					table.remove(activeDemons, i)
@@ -484,7 +661,7 @@ local function spawnDemon(spawnData)
 	end)
 
 	table.insert(activeDemons, demonState)
-	debugSpawnLog("Spawned Lv." .. level .. " sentinel demon at " .. tostring(spawnCFrame.Position))
+	debugSpawnLog("Spawned " .. displayName .. " Lv." .. level .. " at " .. tostring(spawnCFrame.Position))
 	return demonState
 end
 
@@ -512,6 +689,7 @@ task.spawn(function()
 			local spawnPos = demonState.spawnCFrame.Position
 			local currentPos = hrp.Position
 			local closestPlayer, dist = findPlayerInRadius(currentPos, AGGRO_RADIUS)
+			local poseThisTick = "idle"
 
 			if closestPlayer then
 				local targetHRP = closestPlayer.Character and closestPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -538,16 +716,23 @@ task.spawn(function()
 
 						local lookCFrame = CFrame.lookAt(nextPos, nextPos + flatDir.Unit)
 						demon:PivotTo(lookCFrame)
+						if (nextPos - currentPos).Magnitude > 0.05 then
+							poseThisTick = "walk"
+						end
 					end
 				end
 
 				demonState.aiState = "attacking"
+				if dist <= ATTACK_RADIUS then
+					poseThisTick = "idle"
+				end
 
 				local now = tick()
 				if dist <= ATTACK_RADIUS and now - demonState.lastAttack >= ATTACK_COOLDOWN and not demonState.isAttacking then
 					demonState.lastAttack = now
 					demonState.isAttacking = true
-					spawnDemonAttackVFX(demon)
+					demonState.attackPoseUntil = now + ATTACK_WINDUP + 0.35
+					poseThisTick = "attack"
 
 					local debugMode = false
 					local debugVal = demon:FindFirstChild("DebugHitbox")
@@ -555,15 +740,50 @@ task.spawn(function()
 						debugMode = debugVal.Value
 					end
 
-					task.delay(ATTACK_WINDUP, function()
-						if not demonState.alive or not demon.Parent or demonState.humanoid.Health <= 0 then
+					if demonState.isBoss and now - demonState.lastSpecial >= BOSS_SPECIAL_COOLDOWN then
+						demonState.lastSpecial = now
+						animateDemonPose(demonState, "attack")
+						spawnBossDemonArtVFX(demon)
+
+						task.delay(ATTACK_WINDUP + 0.2, function()
+							if not demonState.alive or not demon.Parent or demonState.humanoid.Health <= 0 then
+								demonState.isAttacking = false
+								return
+							end
+
+							local bossPos = hrp.Position
+							for _, player in Players:GetPlayers() do
+								local character = player.Character
+								local targetHRP = character and character:FindFirstChild("HumanoidRootPart")
+								local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+								if targetHRP and humanoid and humanoid.Health > 0 then
+									local distance = (targetHRP.Position - bossPos).Magnitude
+									if distance <= BOSS_SPECIAL_RADIUS and not isSafePosition(targetHRP.Position) then
+										CombatModule.applyDamageFromNPC(character, demonState.stats.damage * 1.4, demon)
+									end
+								end
+							end
+
 							demonState.isAttacking = false
-							return
-						end
-						CombatModule.processNPCAttack(demon, demonState.stats.damage, debugMode)
-						demonState.isAttacking = false
-					end)
+						end)
+					else
+						animateDemonPose(demonState, "attack")
+						spawnDemonAttackVFX(demon)
+
+						task.delay(ATTACK_WINDUP, function()
+							if not demonState.alive or not demon.Parent or demonState.humanoid.Health <= 0 then
+								demonState.isAttacking = false
+								return
+							end
+							CombatModule.processNPCAttack(demon, demonState.stats.damage, debugMode)
+							demonState.isAttacking = false
+						end)
+					end
 				end
+				if tick() < (demonState.attackPoseUntil or 0) then
+					poseThisTick = "attack"
+				end
+				animateDemonPose(demonState, poseThisTick)
 			else
 				local homeDir = spawnPos - currentPos
 				if homeDir.Magnitude > 1 then
@@ -572,11 +792,14 @@ task.spawn(function()
 					if flatHome.Magnitude > 0.1 then
 						local nextPos = currentPos + flatHome.Unit * math.min(MOVE_SPEED * AI_TICK, homeDir.Magnitude)
 						demon:PivotTo(CFrame.lookAt(nextPos, nextPos + flatHome.Unit))
+						poseThisTick = "walk"
 					end
 				else
 					demonState.aiState = "idle"
 					demon:PivotTo(demonState.spawnCFrame)
+					poseThisTick = "idle"
 				end
+				animateDemonPose(demonState, poseThisTick)
 			end
 		end
 	end

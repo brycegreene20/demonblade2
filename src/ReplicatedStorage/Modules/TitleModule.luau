@@ -13,7 +13,10 @@ TitleModule.TITLES = {
 		BaseBuff = 0.05,
 		BuffPerLevel = 0.01,
 		BaseMaxBuff = 0.30,
-		RebirthBuffBonus = 0.05,
+		RebirthBuffBonus = 0.15,
+		RebirthBaseBuffBonus = 0.03,
+		LevelsPerRebirth = 25,
+		RebirthXPScale = 1.65,
 		XPPerLevel = 100,
 		LevelExponent = 1.4,
 		MaxLevel = 50,
@@ -31,7 +34,10 @@ TitleModule.TITLES = {
 		BaseBuff = 0.05,
 		BuffPerLevel = 0.01,
 		BaseMaxBuff = 0.30,
-		RebirthBuffBonus = 0.05,
+		RebirthBuffBonus = 0.15,
+		RebirthBaseBuffBonus = 0.03,
+		LevelsPerRebirth = 25,
+		RebirthXPScale = 1.65,
 		XPPerLevel = 100,
 		LevelExponent = 1.4,
 		MaxLevel = 50,
@@ -60,20 +66,31 @@ function TitleModule.getAllTitles()
 	return titles
 end
 
--- XP required to advance from `level` to `level + 1`
-function TitleModule.xpForLevel(titleId, level)
+function TitleModule.getMaxLevel(titleId, rebirthCount)
+	local title = TitleModule.TITLES[titleId]
+	if not title then return 50 end
+	return title.MaxLevel + math.max(0, tonumber(rebirthCount) or 0) * (title.LevelsPerRebirth or 25)
+end
+
+-- XP required to advance from `level` to `level + 1`.
+function TitleModule.xpForLevel(titleId, level, rebirthCount)
 	local title = TitleModule.TITLES[titleId]
 	if not title then return 100 end
-	return math.floor(title.XPPerLevel * (level ^ title.LevelExponent))
+	local rebirths = math.max(0, tonumber(rebirthCount) or 0)
+	local tierScale = (title.RebirthXPScale or 1.65) ^ rebirths
+	local exponent = title.LevelExponent + rebirths * 0.04
+	return math.floor(title.XPPerLevel * tierScale * (math.max(1, level) ^ exponent))
 end
 
 -- Total damage buff (as a multiplier addend, e.g. 0.10 = +10%)
 function TitleModule.computeBuff(titleId, level, rebirthCount)
 	local title = TitleModule.TITLES[titleId]
 	if not title then return 0 end
-	local rc = rebirthCount or 0
+	local rc = math.max(0, tonumber(rebirthCount) or 0)
 	local cap = title.BaseMaxBuff + rc * title.RebirthBuffBonus
-	local buff = title.BaseBuff + (level - 1) * title.BuffPerLevel
+	local base = title.BaseBuff + rc * (title.RebirthBaseBuffBonus or 0.03)
+	local perLevel = title.BuffPerLevel * (1 + rc * 0.10)
+	local buff = base + (math.max(1, level) - 1) * perLevel
 	return math.min(buff, cap)
 end
 

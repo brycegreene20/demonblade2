@@ -77,6 +77,8 @@ function SkillSystemModule.registerSkill(skillId, config)
 		Description = config.Description or "",
 		LevelRequired = config.LevelRequired or 1,
 		MasteryLevelRequired = config.MasteryLevelRequired or MASTERY_UNLOCK_LEVEL_BY_SLOT[config.Slot or "Q"] or 1,
+		VFXProfile = config.VFXProfile or "",
+		VFXAssets = config.VFXAssets or {},
 	}
 end
 
@@ -95,6 +97,8 @@ SkillSystemModule.registerSkill("WaterSurfaceSlash", {
 	MultiHitDelay = 0.1,
 	Description = "A single concentrated slash of water that cuts through enemies.",
 	LevelRequired = 1,
+	VFXProfile = "SurfaceSlash",
+	VFXAssets = {"TanjiroWaterSlash", "Mist/water 2", "Water-01", "Slash-Impact-01"},
 })
 
 SkillSystemModule.registerSkill("WaterWheel", {
@@ -111,6 +115,8 @@ SkillSystemModule.registerSkill("WaterWheel", {
 	MultiHitDelay = 0.12,
 	Description = "Spin your body in a vertical circle, creating a wheel of water that slashes all around.",
 	LevelRequired = 1,
+	VFXProfile = "VerticalWheel",
+	VFXAssets = {"TanjiroWaterSlash", "good twirl", "Water effect", "Water-02"},
 })
 
 SkillSystemModule.registerSkill("FlowingDance", {
@@ -127,6 +133,8 @@ SkillSystemModule.registerSkill("FlowingDance", {
 	MultiHitDelay = 0.15,
 	Description = "Swift flowing sword strikes that move like water, hitting enemies repeatedly.",
 	LevelRequired = 1,
+	VFXProfile = "SerpentineDance",
+	VFXAssets = {"Side slash", "Mist/water", "Water-01", "TanjiroWaterSlash"},
 })
 
 SkillSystemModule.registerSkill("WaterfallBasin", {
@@ -141,11 +149,15 @@ SkillSystemModule.registerSkill("WaterfallBasin", {
 	HitboxOffset = 5,
 	MultiHit = 3,
 	MultiHitDelay = 0.2,
-	Description = "A powerful downward slash that crashes like a waterfall, dealing massive damage.",
+	Description = "Successive flowing cuts surge forward like a rising tide, overwhelming enemies in their path.",
 	LevelRequired = 1,
+	VFXProfile = "StrikingTide",
+	VFXAssets = {"Side slash", "Mist/water 2", "Downwards slash", "Water-02"},
 })
 
 SkillSystemModule.registerSkill("ConstantFlux", {
+	VFXProfile = "DeadCalm",
+	VFXAssets = {"Mist/water", "Water trail", "Side slash", "Slash"},
 	Name = "Eleventh Form: Dead Calm",
 	Faction = "Slayer",
 	Style = "WaterBreathing",
@@ -162,6 +174,8 @@ SkillSystemModule.registerSkill("ConstantFlux", {
 })
 
 SkillSystemModule.registerSkill("WaterDragon", {
+	VFXProfile = "WaterDragon",
+	VFXAssets = {"Constant flux's dragon", "Water effect", "Water trail", "Water-02"},
 	Name = "Tenth Form: Water Dragon",
 	Faction = "Slayer",
 	Style = "WaterBreathing",
@@ -215,6 +229,7 @@ SkillSystemModule.registerSkill("FlameThird", {
 	Faction = "Slayer",
 	Style = "FlameBreathing",
 	Slot = "R",
+	Icon = "☄",
 	BaseDamage = 18,
 	StaminaCost = 38,
 	Cooldown = 14,
@@ -563,6 +578,9 @@ function SkillSystemModule.canUseSkill(player, skillId, playerData)
 		local mastery = playerData.Mastery[skill.Style]
 		if mastery then
 			masteryLevel = mastery.Level or 1
+			if (mastery.RebirthCount or 0) > 0 then
+				masteryLevel = math.max(masteryLevel, 15)
+			end
 		end
 	end
 

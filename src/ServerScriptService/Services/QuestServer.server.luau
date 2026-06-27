@@ -123,12 +123,22 @@ local function completeQuest(player)
 
 	state.activeQuest = nil
 
-	PlayerDataModule.addXP(player, quest.xpReward)
+	local rewards = QuestDataModule.getProgressionRewards(quest)
+	PlayerDataModule.addXP(player, rewards.XP)
+	local data = PlayerDataModule.getData(player)
+	if data and data.EquippedStyle and data.EquippedStyle ~= "" and rewards.MasteryXP > 0 then
+		PlayerDataModule.addMasteryXP(player, data.EquippedStyle, rewards.MasteryXP)
+	end
+	if data and data.EquippedTitle and data.EquippedTitle ~= "" and rewards.TitleXP > 0 then
+		PlayerDataModule.addTitleXP(player, data.EquippedTitle, rewards.TitleXP)
+	end
 
 	QuestCompletedRemote:FireClient(player, {
 		questId = questId,
 		title = quest.title,
-		xpReward = quest.xpReward,
+		xpReward = rewards.XP,
+		masteryXPReward = rewards.MasteryXP,
+		titleXPReward = rewards.TitleXP,
 		timesCompleted = timesCompleted,
 		repeatable = quest.repeatable or false,
 	})
@@ -137,12 +147,28 @@ local function completeQuest(player)
 		QuestCompletedToastRemote:FireClient(player, {
 			questId = questId,
 			title = quest.title,
-			xpReward = quest.xpReward,
+			xpReward = rewards.XP,
+			masteryXPReward = rewards.MasteryXP,
+			titleXPReward = rewards.TitleXP,
 			isRepeatable = true,
 		})
 	end
 
-	print("[QuestServer] " .. player.Name .. " completed quest: " .. quest.title .. " (+" .. quest.xpReward .. " XP, x" .. timesCompleted .. ")")
+	print(
+		"[QuestServer] "
+			.. player.Name
+			.. " completed quest: "
+			.. quest.title
+			.. " (+"
+			.. rewards.XP
+			.. " XP, +"
+			.. rewards.MasteryXP
+			.. " mastery, +"
+			.. rewards.TitleXP
+			.. " title XP, x"
+			.. timesCompleted
+			.. ")"
+	)
 end
 
 local function advanceKillObjective(player, enemyType)
@@ -252,6 +278,8 @@ GetAvailableQuestsRemote.OnServerInvoke = function(player, npcId)
 			title = displayTitle,
 			description = quest.description,
 			xpReward = quest.xpReward,
+			masteryXPReward = quest.masteryXPReward or 0,
+			titleXPReward = quest.titleXPReward or 0,
 			requiredLevel = quest.requiredLevel,
 			objectives = quest.objectives,
 			status = status,

@@ -503,7 +503,14 @@ completeSub.ZIndex = 19
 completeSub.Parent = completeFrame
 
 local function showQuestComplete(data)
-	completeSub.Text = data.title .. "  +" .. data.xpReward .. " XP"
+	completeSub.Text = data.title
+		.. "  +"
+		.. data.xpReward
+		.. " XP  +"
+		.. (data.masteryXPReward or 0)
+		.. " Mastery  +"
+		.. (data.titleXPReward or 0)
+		.. " Title"
 	completeFrame.Visible = true
 	completeFrame.Position = UDim2.fromScale(0.5, 0.14)
 	completeFrame.BackgroundTransparency = 1
@@ -657,7 +664,13 @@ local function showToast(data)
 
 	toastQuestId = data.questId
 	toastTitle.Text = data.title
-	toastXP.Text = "+" .. data.xpReward .. " XP earned"
+	toastXP.Text = "+"
+		.. data.xpReward
+		.. " XP  |  +"
+		.. (data.masteryXPReward or 0)
+		.. " Mastery  |  +"
+		.. (data.titleXPReward or 0)
+		.. " Title"
 
 	toastFrame.Visible = true
 	toastFrame.Position = UDim2.new(1, 320, 0, 100)

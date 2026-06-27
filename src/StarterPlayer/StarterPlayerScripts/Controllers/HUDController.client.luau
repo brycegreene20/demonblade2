@@ -41,6 +41,7 @@ hudLog("Core remotes ready")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local SkillSystemModule = require(Modules:WaitForChild("SkillSystemModule"))
+local MasteryModule = require(Modules:WaitForChild("MasteryModule"))
 hudLog("SkillSystemModule loaded")
 
 local EquipTitleRemote = Remotes:FindFirstChild("EquipTitle")
@@ -237,8 +238,6 @@ local MASTERY_GOLD_COLOR = Color3.fromRGB(255, 210, 50)
 local MASTERY_BG = Color3.fromRGB(20, 25, 35)
 
 local _MASTERY_MILESTONES = {10, 25, 50, 75, 100}
-local MASTERY_MAX = 100
-
 local masteryBarContainer = Instance.new("CanvasGroup")
 masteryBarContainer.Name = "MasteryBarContainer"
 masteryBarContainer.Size = UDim2.fromOffset(BAR_WIDTH, MASTERY_BAR_HEIGHT + 14)
@@ -274,6 +273,24 @@ masteryLvLabel.TextStrokeTransparency = 0.4
 masteryLvLabel.TextXAlignment = Enum.TextXAlignment.Right
 masteryLvLabel.Text = ""
 masteryLvLabel.Parent = masteryBarContainer
+
+local masteryRebirthButton = Instance.new("TextButton")
+masteryRebirthButton.Name = "MasteryRebirthButton"
+masteryRebirthButton.Size = UDim2.fromOffset(64, 14)
+masteryRebirthButton.Position = UDim2.new(1, -64, 0, -1)
+masteryRebirthButton.BackgroundColor3 = Color3.fromRGB(165, 120, 25)
+masteryRebirthButton.BorderSizePixel = 0
+masteryRebirthButton.Font = Enum.Font.GothamBold
+masteryRebirthButton.TextSize = 9
+masteryRebirthButton.TextColor3 = Color3.fromRGB(255, 240, 190)
+masteryRebirthButton.Text = "ASCEND"
+masteryRebirthButton.Visible = false
+masteryRebirthButton.Parent = masteryBarContainer
+do
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 4)
+	c.Parent = masteryRebirthButton
+end
 
 local masteryBarBg = Instance.new("Frame")
 masteryBarBg.Name = "MasteryBarBg"
@@ -557,6 +574,26 @@ statTitle.Text = "STAT ALLOCATION"
 statTitle.ZIndex = 16
 statTitle.Parent = statPanel
 
+local statCloseBtn = Instance.new("TextButton")
+statCloseBtn.Name = "CloseBtn"
+statCloseBtn.Size = UDim2.fromOffset(28, 28)
+statCloseBtn.Position = UDim2.new(1, -34, 0, 4)
+statCloseBtn.BackgroundColor3 = Color3.fromRGB(25, 28, 38)
+statCloseBtn.BackgroundTransparency = 0.15
+statCloseBtn.BorderSizePixel = 0
+statCloseBtn.Font = Enum.Font.GothamBold
+statCloseBtn.TextSize = 16
+statCloseBtn.TextColor3 = Color3.fromRGB(220, 225, 235)
+statCloseBtn.Text = "X"
+statCloseBtn.AutoButtonColor = false
+statCloseBtn.ZIndex = 17
+statCloseBtn.Parent = statPanel
+do
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 6)
+	c.Parent = statCloseBtn
+end
+
 local statPointsLabel = Instance.new("TextLabel")
 statPointsLabel.Name = "StatPoints"
 statPointsLabel.Size = UDim2.new(1, -20, 0, 24)
@@ -587,8 +624,7 @@ hintLabel.Parent = statPanel
 local statRows = {}
 
 local STAT_DEFS = {
-	{key = "BreathDamage", display = "Breath DMG", desc = "+3% ability damage", color = Color3.fromRGB(80, 160, 220), faction = "Slayer"},
-	{key = "DemonArtDamage", display = "Demon Art DMG", desc = "+3% ability damage", color = Color3.fromRGB(200, 60, 60), faction = "Demon"},
+	{key = "Damage", display = "Damage", desc = "+3% damage for every combat style", color = Color3.fromRGB(220, 105, 80)},
 	{key = "Health", display = "Health", desc = "+15 max HP per point", color = Color3.fromRGB(220, 60, 60)},
 	{key = "Defense", display = "Defense", desc = "Reduce damage taken (cap 64%)", color = Color3.fromRGB(180, 160, 60)},
 	{key = "StaminaStat", display = "Stamina", desc = "+5 max stamina per point", color = Color3.fromRGB(60, 180, 220)},
@@ -980,7 +1016,7 @@ local function updateStatPanel()
 		elseif key == "MovementSpeed" then
 			local ws = cachedStatData.DerivedWalkSpeed or math.min(24 + points * 0.5, 40)
 			rowData.DerivedLabel.Text = string.format("WS: %.1f", ws)
-		elseif key == "BreathDamage" or key == "DemonArtDamage" then
+		elseif key == "Damage" then
 			local dmgMult = cachedStatData.DerivedDamageMultiplier or (1.0 + points * 0.03)
 			rowData.DerivedLabel.Text = string.format("x%.2f", dmgMult)
 		end
@@ -1292,6 +1328,12 @@ local function updateStatIconPulse()
 	end
 end
 
+statCloseBtn.Activated:Connect(function()
+	if statPanelOpen then
+		toggleStatPanel()
+	end
+end)
+
 -- ==================== TITLE ICON BUTTON ====================
 local titleIconBtn = Instance.new("TextButton")
 do
@@ -1512,6 +1554,26 @@ invPanelTitle.Text = "SCROLLS & FRUITS"
 invPanelTitle.ZIndex = 16
 invPanelTitle.Parent = invPanel
 
+local invCloseBtn = Instance.new("TextButton")
+invCloseBtn.Name = "CloseBtn"
+invCloseBtn.Size = UDim2.fromOffset(28, 28)
+invCloseBtn.Position = UDim2.new(1, -34, 0, 4)
+invCloseBtn.BackgroundColor3 = Color3.fromRGB(25, 28, 38)
+invCloseBtn.BackgroundTransparency = 0.15
+invCloseBtn.BorderSizePixel = 0
+invCloseBtn.Font = Enum.Font.GothamBold
+invCloseBtn.TextSize = 16
+invCloseBtn.TextColor3 = Color3.fromRGB(220, 225, 235)
+invCloseBtn.Text = "X"
+invCloseBtn.AutoButtonColor = false
+invCloseBtn.ZIndex = 17
+invCloseBtn.Parent = invPanel
+do
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 6)
+	c.Parent = invCloseBtn
+end
+
 local invPanelHint = Instance.new("TextLabel")
 invPanelHint.Size = UDim2.new(1, -16, 0, 16)
 invPanelHint.Position = UDim2.fromOffset(8, 34)
@@ -1709,11 +1771,17 @@ toggleInventoryPanel = function()
 		}):Play()
 		task.delay(0.18, function()
 			if not invPanelOpen then
-					invPanel.Visible = false
-				end
+				invPanel.Visible = false
+			end
 		end)
 	end
 end
+
+invCloseBtn.Activated:Connect(function()
+	if invPanelOpen then
+		toggleInventoryPanel()
+	end
+end)
 
 -- ==================== DEATH SCREEN ====================
 local deathScreen = Instance.new("Frame")
@@ -1740,10 +1808,24 @@ deathTitle.Text = "YOU DIED"
 deathTitle.ZIndex = 11
 deathTitle.Parent = deathScreen
 
+local deathSubtitle = Instance.new("TextLabel")
+deathSubtitle.Name = "Subtitle"
+deathSubtitle.Size = UDim2.new(1, 0, 0, 28)
+deathSubtitle.Position = UDim2.new(0, 0, 0.35, 58)
+deathSubtitle.BackgroundTransparency = 1
+deathSubtitle.Font = Enum.Font.GothamBold
+deathSubtitle.TextSize = 18
+deathSubtitle.TextColor3 = Color3.fromRGB(235, 225, 225)
+deathSubtitle.TextStrokeColor3 = SHADOW_COLOR
+deathSubtitle.TextStrokeTransparency = 0.45
+deathSubtitle.Text = ""
+deathSubtitle.ZIndex = 11
+deathSubtitle.Parent = deathScreen
+
 local deathTimer = Instance.new("TextLabel")
 deathTimer.Name = "Timer"
 deathTimer.Size = UDim2.new(1, 0, 0, 30)
-deathTimer.Position = UDim2.new(0, 0, 0.35, 65)
+deathTimer.Position = UDim2.new(0, 0, 0.35, 88)
 deathTimer.BackgroundTransparency = 1
 deathTimer.Font = Enum.Font.GothamMedium
 deathTimer.TextSize = 20
@@ -1754,13 +1836,23 @@ deathTimer.Text = ""
 deathTimer.ZIndex = 11
 deathTimer.Parent = deathScreen
 
-local function showDeathScreen(respawnTime)
+local function showDeathScreen(respawnTime, defeatedByName)
 	deathScreen.Visible = true
 	deathScreen.BackgroundTransparency = 1
 	TweenService:Create(deathScreen, TweenInfo.new(0.5), {BackgroundTransparency = 0.5}):Play()
 
+	if typeof(defeatedByName) == "string" and defeatedByName ~= "" then
+		deathTitle.Text = "DEFEATED"
+		deathSubtitle.Text = "Killed by " .. defeatedByName
+	else
+		deathTitle.Text = "YOU DIED"
+		deathSubtitle.Text = ""
+	end
+
 	deathTitle.TextTransparency = 1
+	deathSubtitle.TextTransparency = 1
 	TweenService:Create(deathTitle, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+	TweenService:Create(deathSubtitle, TweenInfo.new(0.35), {TextTransparency = 0}):Play()
 
 	task.spawn(function()
 		for i = respawnTime, 1, -1 do
@@ -1774,16 +1866,20 @@ end
 local function hideDeathScreen()
 	TweenService:Create(deathScreen, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
 	TweenService:Create(deathTitle, TweenInfo.new(0.2), {TextTransparency = 1}):Play()
+	TweenService:Create(deathSubtitle, TweenInfo.new(0.2), {TextTransparency = 1}):Play()
 	TweenService:Create(deathTimer, TweenInfo.new(0.2), {TextTransparency = 1}):Play()
 	task.delay(0.35, function()
 		deathScreen.Visible = false
+		deathSubtitle.TextTransparency = 0
 		deathTimer.TextTransparency = 0
 	end)
 end
 
--- ==================== ERROR BANNER ====================
+-- ==================== STATUS NOTIFICATIONS ====================
+local function initStatusNotifications()
 local DataLoadError = Remotes:WaitForChild("DataLoadError")
 local ZoneChangedRemote = Remotes:FindFirstChild("ZoneChanged")
+local CombatMessageRemote = Remotes:FindFirstChild("CombatMessage")
 
 local errorBanner = Instance.new("Frame")
 errorBanner.Name = "ErrorBanner"
@@ -1862,6 +1958,56 @@ do
 	s.Parent = safeZoneBanner
 end
 
+local combatToast = Instance.new("TextLabel")
+combatToast.Name = "CombatToast"
+combatToast.Size = UDim2.fromOffset(380, 42)
+combatToast.Position = UDim2.new(0.5, 0, 0, 64)
+combatToast.AnchorPoint = Vector2.new(0.5, 0)
+combatToast.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
+combatToast.BackgroundTransparency = 0.1
+combatToast.BorderSizePixel = 0
+combatToast.Font = Enum.Font.GothamBold
+combatToast.TextSize = 15
+combatToast.TextColor3 = Color3.fromRGB(245, 245, 245)
+combatToast.TextStrokeColor3 = SHADOW_COLOR
+combatToast.TextStrokeTransparency = 0.55
+combatToast.TextWrapped = true
+combatToast.Text = ""
+combatToast.Visible = false
+combatToast.ZIndex = 19
+combatToast.Parent = screenGui
+do
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 8)
+	c.Parent = combatToast
+	local s = Instance.new("UIStroke")
+	s.Color = Color3.fromRGB(120, 150, 210)
+	s.Thickness = 1
+	s.Transparency = 0.25
+	s.Parent = combatToast
+end
+
+local combatToastToken = 0
+local function showCombatToast(message)
+	if typeof(message) ~= "string" or message == "" then return end
+	combatToastToken += 1
+	local token = combatToastToken
+	combatToast.Text = message
+	combatToast.Visible = true
+	combatToast.TextTransparency = 1
+	combatToast.BackgroundTransparency = 1
+	TweenService:Create(combatToast, TweenInfo.new(0.2), {TextTransparency = 0, BackgroundTransparency = 0.1}):Play()
+	task.delay(3.2, function()
+		if token ~= combatToastToken then return end
+		TweenService:Create(combatToast, TweenInfo.new(0.25), {TextTransparency = 1, BackgroundTransparency = 1}):Play()
+		task.delay(0.3, function()
+			if token == combatToastToken then
+				combatToast.Visible = false
+			end
+		end)
+	end)
+end
+
 -- ==================== EVENT CONNECTIONS ====================
 HPChanged.OnClientEvent:Connect(function(hp, maxHp)
 	hudTrace("HPChanged received: " .. tostring(hp) .. "/" .. tostring(maxHp))
@@ -1874,9 +2020,21 @@ StaminaChanged.OnClientEvent:Connect(function(stamina, maxStam)
 	updateStamina(stamina, maxStam)
 end)
 
-PlayerDeath.OnClientEvent:Connect(function(respawnTime)
-	showDeathScreen(respawnTime or 5)
+PlayerDeath.OnClientEvent:Connect(function(respawnTime, defeatedByName)
+	showDeathScreen(respawnTime or 5, defeatedByName)
 end)
+
+if CombatMessageRemote then
+	CombatMessageRemote.OnClientEvent:Connect(function(payload)
+		if typeof(payload) == "table" then
+			showCombatToast(payload.Text or payload.Message or "")
+		elseif typeof(payload) == "string" then
+			showCombatToast(payload)
+		end
+	end)
+else
+	warn("[HUDController] CombatMessage remote missing; PvP defeat toasts disabled")
+end
 
 PlayerRespawn.OnClientEvent:Connect(function()
 	hideDeathScreen()
@@ -1951,6 +2109,10 @@ if ZoneChangedRemote then
 		end
 	end)
 end
+
+end
+
+initStatusNotifications()
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
@@ -2378,18 +2540,19 @@ local function refreshTitleCards()
 		local td = cachedTitles[titleId]
 		local level = td and (td.Level or 0) or 0
 		local xp = td and (td.XP or 0) or 0
-		local xpNeeded = TitleModule.xpForLevel(titleId, math.max(level, 1))
 		local rebirthCount = td and (td.RebirthCount or 0) or 0
+		local maxLevel = TitleModule.getMaxLevel(titleId, rebirthCount)
+		local xpNeeded = TitleModule.xpForLevel(titleId, math.max(level, 1), rebirthCount)
 		local buff = TitleModule.computeBuff(titleId, math.max(level, 1), rebirthCount)
 
-		local ratio = level >= titleDef.MaxLevel and 1 or math.clamp(xp / math.max(xpNeeded, 1), 0, 1)
+		local ratio = level >= maxLevel and 1 or math.clamp(xp / math.max(xpNeeded, 1), 0, 1)
 		TweenService:Create(refs.XPFill, TweenInfo.new(0.3), {Size = UDim2.fromScale(ratio, 1)}):Play()
-		refs.XPLabel.Text = level >= titleDef.MaxLevel
+		refs.XPLabel.Text = level >= maxLevel
 			and ("Lv " .. level .. " — MAX")
 			or ("Lv " .. level .. " — " .. xp .. " / " .. xpNeeded .. " XP")
-		refs.BuffValue.Text = string.format("Buff: +%.1f%%  |  Rebirth x%d", buff * 100, rebirthCount)
+		refs.BuffValue.Text = string.format("Buff: +%.1f%%  |  Tier %d", buff * 100, rebirthCount + 1)
 
-		refs.RebirthBtn.Visible = (level >= titleDef.MaxLevel and isEquipped)
+		refs.RebirthBtn.Visible = (level >= maxLevel and isEquipped)
 
 		if isEquipped then
 			refs.EquipBtn.Text = "Equipped"
@@ -2646,6 +2809,8 @@ local function initMasteryBarSystem()
 	local currentMasteryLevel = 0
 	local currentMasteryXP = 0
 	local currentMasteryXPNeeded = 30
+	local currentMasteryRebirth = 0
+	local currentMasteryMaxLevel = MasteryModule.BASE_MAX_LEVEL
 	local masteryEquipped = false
 	local masteryCache = {}
 	local MASTERY_TWEEN = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -2665,8 +2830,8 @@ local function initMasteryBarSystem()
 		return ""
 	end
 
-	local function getMasteryXPNeeded(level)
-		return math.floor(30 * ((level or 1) ^ 1.25))
+	local function getMasteryXPNeeded(level, rebirthCount)
+		return MasteryModule.xpForLevel(level or 1, rebirthCount or 0)
 	end
 
 	local function setDisplayedMastery(styleId)
@@ -2676,6 +2841,8 @@ local function initMasteryBarSystem()
 			currentMasteryLevel = 0
 			currentMasteryXP = 0
 			currentMasteryXPNeeded = 30
+			currentMasteryRebirth = 0
+			currentMasteryMaxLevel = MasteryModule.BASE_MAX_LEVEL
 			return
 		end
 
@@ -2684,7 +2851,13 @@ local function initMasteryBarSystem()
 		currentMasteryStyleId = styleId
 		currentMasteryLevel = level
 		currentMasteryXP = mastery and (mastery.XP or 0) or 0
-		currentMasteryXPNeeded = mastery and (mastery.XPNeeded or getMasteryXPNeeded(level)) or getMasteryXPNeeded(level)
+		currentMasteryRebirth = mastery and (mastery.RebirthCount or 0) or 0
+		currentMasteryMaxLevel = mastery
+			and (mastery.MaxLevel or MasteryModule.getMaxLevel(currentMasteryRebirth))
+			or MasteryModule.getMaxLevel(currentMasteryRebirth)
+		currentMasteryXPNeeded = mastery
+			and (mastery.XPNeeded or getMasteryXPNeeded(level, currentMasteryRebirth))
+			or getMasteryXPNeeded(level, currentMasteryRebirth)
 		masteryEquipped = true
 	end
 
@@ -2693,15 +2866,18 @@ local function initMasteryBarSystem()
 			masteryBarContainer.GroupTransparency = 0.7
 			masteryStyleLabel.Text = "No style equipped"
 			masteryLvLabel.Text = ""
+			masteryLvLabel.Visible = true
+			masteryRebirthButton.Visible = false
 			masteryFill.Size = UDim2.fromScale(0, 1)
 			return
 		end
 
 		masteryBarContainer.GroupTransparency = 0
 
-		if currentMasteryLevel >= MASTERY_MAX then
-			masteryStyleLabel.Text = "MASTERED"
-			masteryLvLabel.Text = "Lv " .. currentMasteryLevel
+		if currentMasteryLevel >= currentMasteryMaxLevel then
+			masteryStyleLabel.Text = "TIER " .. (currentMasteryRebirth + 1) .. " MASTERED"
+			masteryLvLabel.Visible = false
+			masteryRebirthButton.Visible = true
 			masteryFill.BackgroundColor3 = MASTERY_GOLD_COLOR
 			TweenService:Create(masteryFill, MASTERY_TWEEN, {Size = UDim2.fromScale(1, 1)}):Play()
 			return
@@ -2736,9 +2912,11 @@ local function initMasteryBarSystem()
 				currentMasteryFaction = skill.Faction
 			end
 		end
+		masteryLvLabel.Visible = true
+		masteryRebirthButton.Visible = false
 
 		masteryStyleLabel.Text = displayName
-		masteryLvLabel.Text = "Lv " .. currentMasteryLevel
+		masteryLvLabel.Text = "T" .. (currentMasteryRebirth + 1) .. " Lv " .. currentMasteryLevel
 
 		local ratio = 0
 		if currentMasteryXPNeeded > 0 then
@@ -2759,12 +2937,14 @@ local function initMasteryBarSystem()
 	end
 
 	if MasteryChangedRemote then
-		MasteryChangedRemote.OnClientEvent:Connect(function(styleId, level, xp, xpNeeded, _totalXP, levelsGained)
+		MasteryChangedRemote.OnClientEvent:Connect(function(styleId, level, xp, xpNeeded, _totalXP, levelsGained, rebirthCount, maxLevel)
 			if typeof(styleId) == "string" and styleId ~= "" then
 				masteryCache[styleId] = {
 					Level = level or 1,
 					XP = xp or 0,
-					XPNeeded = xpNeeded or getMasteryXPNeeded(level or 1),
+					XPNeeded = xpNeeded or getMasteryXPNeeded(level or 1, rebirthCount),
+					RebirthCount = rebirthCount or 0,
+					MaxLevel = maxLevel or MasteryModule.getMaxLevel(rebirthCount),
 				}
 			end
 			local activeStyle = getActiveStyleFromSkills(currentMasteryFaction)
@@ -2777,6 +2957,20 @@ local function initMasteryBarSystem()
 			end
 		end)
 	end
+
+	masteryRebirthButton.Activated:Connect(function()
+		if currentMasteryStyleId == "" or currentMasteryLevel < currentMasteryMaxLevel then return end
+		local remote = Remotes:FindFirstChild("MasteryRebirth")
+		if not remote then
+			warn("[HUDController] MasteryRebirth remote missing")
+			return
+		end
+		masteryRebirthButton.Text = "..."
+		remote:FireServer(currentMasteryStyleId)
+		task.delay(1, function()
+			masteryRebirthButton.Text = "ASCEND"
+		end)
+	end)
 
 	FactionChosenRemote.OnClientEvent:Connect(function(faction)
 		currentMasteryFaction = faction

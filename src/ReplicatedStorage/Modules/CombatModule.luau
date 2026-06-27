@@ -19,6 +19,8 @@ CombatModule.GUARD_BREAK_STAGGER = 1.2
 CombatModule.GUARD_BREAK_REBLOCK_COOLDOWN = 2.0
 CombatModule.PARRY_WINDOW = 0.25
 CombatModule.PARRY_STAGGER_DURATION = 0.8
+CombatModule.PARRY_BREAK_STUN_DURATION = 1.6
+CombatModule.PARRY_STAMINA_DAMAGE = 35
 CombatModule.PARRY_WHIFF_STAMINA = 15
 
 CombatModule.LIGHT_BASE_DAMAGE = {10, 10, 12, 18}
@@ -29,8 +31,9 @@ local blockingModels = {}
 local incomingHitTimestamps = {}
 local parryStaggerTargets = {}
 local damageContributors = setmetatable({}, { __mode = "k" })
+local friendlyFireLogTimes = setmetatable({}, { __mode = "k" })
 
-local CONTRIBUTION_WINDOW = 90
+local FRIENDLY_FIRE_LOG_COOLDOWN = 10
 
 local function isModelInSafeZone(model)
 	local hrp = model and model:FindFirstChild("HumanoidRootPart")
@@ -45,6 +48,28 @@ end
 
 function CombatModule.isModelInSafeZone(model)
 	return isModelInSafeZone(model)
+end
+
+function CombatModule.canPlayerDamageTarget(attackerPlayer, targetModel)
+	if not attackerPlayer or not targetModel then return true end
+	local targetPlayer = game:GetService("Players"):GetPlayerFromCharacter(targetModel)
+	if not targetPlayer then return true end
+	if targetPlayer == attackerPlayer then return false end
+
+	-- selene: allow(global_usage)
+	local teamService = shared and shared.TeamService
+	if teamService and teamService.areTeammates and teamService.areTeammates(attackerPlayer, targetPlayer) then
+		local now = os.clock()
+		local attackerLogs = friendlyFireLogTimes[attackerPlayer] or {}
+		local lastLog = attackerLogs[targetPlayer]
+		if not lastLog or now - lastLog >= FRIENDLY_FIRE_LOG_COOLDOWN then
+			attackerLogs[targetPlayer] = now
+			friendlyFireLogTimes[attackerPlayer] = attackerLogs
+			print("[CombatModule] Blocked team friendly fire: " .. attackerPlayer.Name .. " -> " .. targetPlayer.Name)
+		end
+		return false
+	end
+	return true
 end
 
 function CombatModule.recordDamageContribution(targetModel, attackerPlayer, amount)
@@ -80,13 +105,11 @@ function CombatModule.getRewardPlayers(targetModel, primaryPlayer, maxDistance)
 
 	addPlayer(primaryPlayer)
 
-	local now = os.clock()
-	local contributors = damageContributors[targetModel]
-	if contributors then
-		for player, contribution in contributors do
-			if contribution and now - (contribution.lastHit or 0) <= CONTRIBUTION_WINDOW then
-				addPlayer(player)
-			end
+	-- selene: allow(global_usage)
+	local teamService = shared and shared.TeamService
+	if teamService and teamService.getNearbyTeamMembers then
+		for _, teamMember in teamService.getNearbyTeamMembers(primaryPlayer, maxDistance) do
+			addPlayer(teamMember)
 		end
 	end
 
@@ -127,8 +150,8 @@ function CombatModule.tryParry(targetModel)
 	return false, nil
 end
 
-function CombatModule.applyParryStagger(attackerModel)
-	parryStaggerTargets[attackerModel] = os.clock() + CombatModule.PARRY_STAGGER_DURATION
+function CombatModule.applyParryStagger(attackerModel, duration)
+	parryStaggerTargets[attackerModel] = os.clock() + (duration or CombatModule.PARRY_STAGGER_DURATION)
 end
 
 function CombatModule.isParryStaggered(model)
@@ -172,6 +195,7 @@ function CombatModule.applyDamage(targetModel, amount, attackerPlayer, isHeavyOr
 	if not humanoid or humanoid.Health <= 0 then return false end
 	if isModelInSafeZone(targetModel) then return false end
 	if attackerPlayer and attackerPlayer.Character and isModelInSafeZone(attackerPlayer.Character) then return false end
+	if not CombatModule.canPlayerDamageTarget(attackerPlayer, targetModel) then return false end
 
 	local finalAmount = amount
 	if CombatModule.isBlocking(targetModel) then
@@ -184,6 +208,9 @@ function CombatModule.applyDamage(targetModel, amount, attackerPlayer, isHeavyOr
 	if targetPlayer then
 		local defenseMult = PlayerDataModule.getDefenseMultiplier(targetPlayer)
 		finalAmount = finalAmount * (1 - defenseMult)
+		if attackerPlayer and attackerPlayer ~= targetPlayer then
+			finalAmount = finalAmount * PlayerDataModule.getPvPDamageMultiplier(attackerPlayer)
+		end
 	end
 
 	local attackerCharacter = nil
@@ -202,7 +229,7 @@ function CombatModule.applyDamage(targetModel, amount, attackerPlayer, isHeavyOr
 	local targetHRP = targetModel:FindFirstChild("HumanoidRootPart")
 	local hitPos = targetHRP and targetHRP.Position or Vector3.zero
 
-	DamageDealt:FireAllClients(targetModel, finalAmount, hitPos, false)
+	DamageDealt:FireAllClients(targetModel, finalAmount, hitPos, false, "Physical", "LightAttack")
 	return true
 end
 
@@ -236,7 +263,7 @@ function CombatModule.applyDamageFromNPC(targetModel, amount, attackerModel)
 	local targetHRP = targetModel:FindFirstChild("HumanoidRootPart")
 	local hitPos = targetHRP and targetHRP.Position or Vector3.zero
 
-	DamageDealt:FireAllClients(targetModel, finalAmount, hitPos, false)
+	DamageDealt:FireAllClients(targetModel, finalAmount, hitPos, false, "DemonEnemy", "EnemyClaw")
 	return true
 end
 

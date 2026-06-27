@@ -1,8 +1,7 @@
 local StatConfig = {}
 
 StatConfig.STAT_KEYS = {
-	"BreathDamage",
-	"DemonArtDamage",
+	"Damage",
 	"Health",
 	"Defense",
 	"StaminaStat",
@@ -10,18 +9,14 @@ StatConfig.STAT_KEYS = {
 }
 
 StatConfig.DISPLAY_NAMES = {
-	BreathDamage   = "Breath Damage",
-	DemonArtDamage = "Demon Art Damage",
+	Damage         = "Damage",
 	Health         = "Health",
 	Defense        = "Defense",
 	StaminaStat    = "Stamina",
 	MovementSpeed  = "Movement Speed",
 }
 
-StatConfig.FACTION_LOCK = {
-	BreathDamage   = "Slayer",
-	DemonArtDamage = "Demon",
-}
+StatConfig.FACTION_LOCK = {}
 
 StatConfig.VALID_STATS = {}
 for _, key in ipairs(StatConfig.STAT_KEYS) do
@@ -37,11 +32,17 @@ StatConfig.BASE = {
 }
 
 StatConfig.LEGACY_KEY_MAP = {
-	DemonDamage = "DemonArtDamage",
+	BreathDamage = "Damage",
+	DemonArtDamage = "Damage",
+	DemonDamage = "Damage",
 	Strength    = nil,
 	Speed       = nil,
 	BreathPower = nil,
 }
+
+function StatConfig.getDamageMultiplier(points)
+	return 1.0 + math.max(0, tonumber(points) or 0) * 0.03
+end
 
 StatConfig.STAT_POINTS_PER_LEVEL = 5
 
