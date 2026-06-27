@@ -497,7 +497,7 @@ test("combat target policy consults live team membership", function()
 	playersService.GetPlayerFromCharacter = function(_self, model)
 		return model == teammateModel and teammate or opponent
 	end
-	shared = { -- selene: allow(incorrect_standard_library_use)
+	shared = { -- selene: allow(incorrect_standard_library_use, global_usage)
 		TeamService = {
 			areTeammates = function(a, b)
 				return a == attacker and b == teammate
@@ -514,7 +514,7 @@ test("kill rewards use last hitter plus nearby team, not unrelated contributors"
 	local teammate = { Name = "Teammate", Parent = true }
 	local contributor = { Name = "Contributor", Parent = true }
 	local target = {}
-	shared.TeamService.getNearbyTeamMembers = function(player)
+	shared.TeamService.getNearbyTeamMembers = function(player) -- selene: allow(global_usage)
 		return player == killer and { teammate } or {}
 	end
 	CombatModule.recordDamageContribution(target, contributor, 999)
