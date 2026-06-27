@@ -14,6 +14,8 @@ QuestDataModule.Quests = {
 		zone = "StarterVillage",
 		requiredLevel = 1,
 		xpReward = 50,
+		masteryXPReward = 10,
+		titleXPReward = 8,
 		repeatable = true,
 		repeatCooldown = 0,
 		objectives = {
@@ -34,6 +36,8 @@ QuestDataModule.Quests = {
 		requiredLevel = 1,
 		prerequisite = "train_01",
 		xpReward = 120,
+		masteryXPReward = 25,
+		titleXPReward = 18,
 		repeatable = true,
 		repeatCooldown = 0,
 		objectives = {
@@ -54,6 +58,8 @@ QuestDataModule.Quests = {
 		requiredLevel = 3,
 		prerequisite = "train_02",
 		xpReward = 200,
+		masteryXPReward = 45,
+		titleXPReward = 30,
 		repeatable = true,
 		repeatCooldown = 0,
 		objectives = {
@@ -73,6 +79,8 @@ QuestDataModule.Quests = {
 		zone = "StarterVillage",
 		requiredLevel = 1,
 		xpReward = 90,
+		masteryXPReward = 20,
+		titleXPReward = 15,
 		repeatable = true,
 		repeatCooldown = 0,
 		objectives = {
@@ -93,6 +101,8 @@ QuestDataModule.Quests = {
 		requiredLevel = 2,
 		prerequisite = "demon_01",
 		xpReward = 180,
+		masteryXPReward = 45,
+		titleXPReward = 30,
 		repeatable = true,
 		repeatCooldown = 0,
 		objectives = {
@@ -101,6 +111,28 @@ QuestDataModule.Quests = {
 				enemyType = "ForestDemon",
 				label = "Defeat Forest Demons",
 				required = 3,
+			},
+		},
+	},
+	{
+		id = "demon_boss_01",
+		title = "The Great Demon",
+		description = "Defeat the Demon Boss for the Corps Officer.",
+		npcId = "QuestNPC_Officer",
+		zone = "StarterVillage",
+		requiredLevel = 5,
+		prerequisite = "demon_02",
+		xpReward = 600,
+		masteryXPReward = 150,
+		titleXPReward = 100,
+		repeatable = true,
+		repeatCooldown = 0,
+		objectives = {
+			{
+				type = "KillCount",
+				enemyType = "DemonBoss",
+				label = "Defeat the Demon Boss",
+				required = 1,
 			},
 		},
 	},
@@ -113,6 +145,17 @@ end
 
 function QuestDataModule.getQuest(questId)
 	return questLookup[questId]
+end
+
+function QuestDataModule.getProgressionRewards(quest)
+	if not quest then
+		return { XP = 0, MasteryXP = 0, TitleXP = 0 }
+	end
+	return {
+		XP = math.max(0, tonumber(quest.xpReward) or 0),
+		MasteryXP = math.max(0, tonumber(quest.masteryXPReward) or 0),
+		TitleXP = math.max(0, tonumber(quest.titleXPReward) or 0),
+	}
 end
 
 function QuestDataModule.getQuestsForNPC(npcId)

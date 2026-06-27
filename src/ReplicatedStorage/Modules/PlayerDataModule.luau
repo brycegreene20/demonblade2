@@ -13,6 +13,9 @@ local Modules = ReplicatedStorage:WaitForChild("Modules")
 local StatConfig = require(Modules:WaitForChild("StatConfig"))
 local TitleModule = require(Modules:WaitForChild("TitleModule"))
 local ItemsModule = require(Modules:WaitForChild("ItemsModule"))
+local BountyModule = require(Modules:WaitForChild("BountyModule"))
+local MasteryModule = require(Modules:WaitForChild("MasteryModule"))
+local RaceModule = require(Modules:WaitForChild("RaceModule"))
 
 local PlayerDataModule = {}
 
@@ -31,6 +34,8 @@ PlayerDataModule.DEFAULTS = {
 	Level = 1,
 	XP = 0,
 	TotalXP = 0,
+	Damage = 0,
+	-- Retained as zero-value save fields while old profiles migrate to Damage.
 	BreathDamage = 0,
 	DemonArtDamage = 0,
 	Health = 0,
@@ -44,6 +49,8 @@ PlayerDataModule.DEFAULTS = {
 	SkillsUnlocked = {},
 	Mastery = {},
 	Bounty = 0,
+	Race = RaceModule.DEFAULT_RACE,
+	RaceSpins = RaceModule.STARTING_SPINS,
 	StatPointsMigrated = false,
 	lastRespecTime = 0,
 	-- New fields
@@ -56,9 +63,9 @@ local STAT_POINTS_PER_LEVEL = StatConfig.STAT_POINTS_PER_LEVEL
 
 local SAVE_FIELDS = {
 	"Level", "XP", "TotalXP",
-	"BreathDamage", "DemonArtDamage", "Health", "Defense", "StaminaStat", "MovementSpeed",
+	"Damage", "BreathDamage", "DemonArtDamage", "Health", "Defense", "StaminaStat", "MovementSpeed",
 	"StatPoints", "Faction", "Inventory", "RebirthCount", "SkillsUnlocked",
-	"Mastery", "Bounty", "StatPointsMigrated", "lastRespecTime",
+	"Mastery", "Bounty", "Race", "RaceSpins", "StatPointsMigrated", "lastRespecTime",
 	"EquippedStyle", "Titles", "EquippedTitle",
 }
 
@@ -135,6 +142,21 @@ local function grantCoreStyleItems(data)
 	if typeof(data.Inventory) ~= "table" then
 		data.Inventory = {}
 	end
+	if typeof(data.Mastery) ~= "table" then
+		data.Mastery = {}
+	end
+	for _, mastery in data.Mastery do
+		if typeof(mastery) == "table" then
+			mastery.Level = math.max(1, tonumber(mastery.Level) or 1)
+			mastery.XP = math.max(0, tonumber(mastery.XP) or 0)
+			mastery.TotalXP = math.max(0, tonumber(mastery.TotalXP) or 0)
+			mastery.RebirthCount = math.max(0, tonumber(mastery.RebirthCount) or 0)
+		end
+	end
+	if not RaceModule.RACES[data.Race] then
+		data.Race = RaceModule.DEFAULT_RACE
+	end
+	data.RaceSpins = math.max(0, tonumber(data.RaceSpins) or RaceModule.STARTING_SPINS)
 
 	for _, itemId in ipairs(ItemsModule.STARTER_STYLE_ITEMS) do
 		if not ItemsModule.hasItem(data.Inventory, itemId) then
@@ -178,13 +200,7 @@ function PlayerDataModule.computeStats(data)
 
 	local equippedScroll = ItemsModule.getScrollByStyle(data.EquippedStyle or "")
 	local styleFaction = equippedScroll and equippedScroll.Faction or data.Faction
-
-	local damageMultiplier = 1.0
-	if styleFaction == "Slayer" then
-		damageMultiplier = 1.0 + (data.BreathDamage * 0.03)
-	elseif styleFaction == "Demon" then
-		damageMultiplier = 1.0 + (data.DemonArtDamage * 0.03)
-	end
+	local damageMultiplier = StatConfig.getDamageMultiplier(data.Damage)
 
 	-- Title buff adds on top of the base multiplier
 	local equippedTitle = data.EquippedTitle or ""
@@ -205,13 +221,13 @@ function PlayerDataModule.computeStats(data)
 		end
 	end
 
-	return {
+	return RaceModule.applyToStats({
 		maxHP = maxHP,
 		maxStamina = maxStamina,
 		walkSpeed = walkSpeed,
 		damageMultiplier = damageMultiplier,
 		defenseMultiplier = defenseMultiplier,
-	}
+	}, data.Race)
 end
 
 function PlayerDataModule.getDamageMultiplier(player)
@@ -520,12 +536,14 @@ function PlayerDataModule.addTitleXP(player, titleId, amount)
 	local title = TitleModule.getTitle(titleId)
 	if not title then return 0 end
 
-	local xpMult = TitleModule.xpMultiplier(titleData.RebirthCount or 0)
+	local rebirthCount = titleData.RebirthCount or 0
+	local maxLevel = TitleModule.getMaxLevel(titleId, rebirthCount)
+	local xpMult = TitleModule.xpMultiplier(rebirthCount)
 	titleData.XP = titleData.XP + math.floor(amount * xpMult)
 
 	local levelsGained = 0
-	while titleData.Level < title.MaxLevel do
-		local needed = TitleModule.xpForLevel(titleId, titleData.Level)
+	while titleData.Level < maxLevel do
+		local needed = TitleModule.xpForLevel(titleId, titleData.Level, rebirthCount)
 		if titleData.XP >= needed then
 			titleData.XP = titleData.XP - needed
 			titleData.Level = titleData.Level + 1
@@ -554,11 +572,13 @@ function PlayerDataModule.rebirthTitle(player, titleId)
 	if not title then return false, "Unknown title" end
 
 	local titleData = data.Titles[titleId]
-	if titleData.Level < title.MaxLevel then
-		return false, "Must reach max level to rebirth"
+	local currentRebirth = titleData.RebirthCount or 0
+	local requiredLevel = TitleModule.getMaxLevel(titleId, currentRebirth)
+	if titleData.Level < requiredLevel then
+		return false, "Must reach level " .. requiredLevel .. " to rebirth"
 	end
 
-	titleData.RebirthCount = (titleData.RebirthCount or 0) + 1
+	titleData.RebirthCount = currentRebirth + 1
 	titleData.Level = 1
 	titleData.XP = 0
 
@@ -663,13 +683,17 @@ function PlayerDataModule.loadSavePayload(player, payload)
 	local legacyPoints = 0
 	for oldKey, newKey in pairs(StatConfig.LEGACY_KEY_MAP) do
 		if payload[oldKey] ~= nil then
-			local val = payload[oldKey]
+			local val = tonumber(payload[oldKey]) or 0
 			if newKey then
 				payload[newKey] = (payload[newKey] or 0) + val
-				print("[PlayerDataModule] Migrated legacy stat " .. oldKey .. " -> " .. newKey .. " (" .. val .. " pts) for " .. player.Name)
+				if val > 0 then
+					print("[PlayerDataModule] Migrated legacy stat " .. oldKey .. " -> " .. newKey .. " (" .. val .. " pts) for " .. player.Name)
+				end
 			else
 				legacyPoints = legacyPoints + val
-				print("[PlayerDataModule] Stripped unknown legacy stat " .. oldKey .. " (" .. val .. " pts) for " .. player.Name)
+				if val > 0 then
+					print("[PlayerDataModule] Stripped unknown legacy stat " .. oldKey .. " (" .. val .. " pts) for " .. player.Name)
+				end
 			end
 			payload[oldKey] = nil
 		end
@@ -830,6 +854,17 @@ function PlayerDataModule.consumeStamina(player, amount)
 	return true
 end
 
+function PlayerDataModule.drainStamina(player, amount)
+	local data = playerData[player]
+	if not data then return 0, 0 end
+	local effMax = PlayerDataModule.getEffectiveMaxStamina(player)
+	local drained = math.min(data.Stamina, amount)
+	data.Stamina = math.clamp(data.Stamina - drained, 0, effMax)
+	StaminaChanged:FireClient(player, data.Stamina, effMax)
+	staminaRegenTimers[player] = os.clock() + data.StaminaRegenPause
+	return drained, data.Stamina
+end
+
 function PlayerDataModule.startStaminaRegen(player)
 	if staminaRegenLoops[player] then
 		return
@@ -858,7 +893,16 @@ function PlayerDataModule.onPlayerDeath(player)
 	if not data then return end
 	if data.isDead then return end
 	data.isDead = true
-	PlayerDeath:FireClient(player, data.RespawnTime)
+	local defeatedByName = nil
+	local character = player.Character
+	local lastAttackerId = character and character:GetAttribute("LastAttacker")
+	if lastAttackerId then
+		local killer = _Players:GetPlayerByUserId(lastAttackerId)
+		if killer and killer ~= player then
+			defeatedByName = killer.DisplayName
+		end
+	end
+	PlayerDeath:FireClient(player, data.RespawnTime, defeatedByName)
 	task.delay(data.RespawnTime, function()
 		if not playerData[player] then return end
 		player:LoadCharacter()
@@ -911,20 +955,20 @@ local MASTERY_STYLES = {
 	"DemonArts",
 	"TemariDemonArts",
 }
+local MASTERY_STYLE_LOOKUP = {}
+for _, styleId in MASTERY_STYLES do
+	MASTERY_STYLE_LOOKUP[styleId] = true
+end
 
-local MASTERY_XP_PER_LEVEL = 30
-local MASTERY_LEVEL_EXPONENT = 1.25
-local MASTERY_MAX_LEVEL = 50
-
-function PlayerDataModule.masteryXPForLevel(level)
-	return math.floor(MASTERY_XP_PER_LEVEL * (level ^ MASTERY_LEVEL_EXPONENT))
+function PlayerDataModule.masteryXPForLevel(level, rebirthCount)
+	return MasteryModule.xpForLevel(level, rebirthCount)
 end
 
 function PlayerDataModule.getMasteryData(player, styleId)
 	local data = playerData[player]
 	if not data then return nil end
 	if not data.Mastery[styleId] then
-		data.Mastery[styleId] = { XP = 0, Level = 1, TotalXP = 0 }
+		data.Mastery[styleId] = { XP = 0, Level = 1, TotalXP = 0, RebirthCount = 0 }
 	end
 	return data.Mastery[styleId]
 end
@@ -932,7 +976,7 @@ end
 function PlayerDataModule.getMasteryLevel(player, styleId)
 	local mastery = PlayerDataModule.getMasteryData(player, styleId)
 	if not mastery then return 1 end
-	return mastery.Level
+	return MasteryModule.getEffectiveUnlockLevel(mastery.Level, mastery.RebirthCount)
 end
 
 function PlayerDataModule.getAllMastery(player)
@@ -951,7 +995,7 @@ function PlayerDataModule.getStyleMasteryLevelFromData(data, styleId)
 
 	local styleMastery = data.Mastery[styleId]
 	if styleMastery then
-		return styleMastery.Level or 1
+		return MasteryModule.getEffectiveUnlockLevel(styleMastery.Level, styleMastery.RebirthCount)
 	end
 
 	return 1
@@ -968,21 +1012,23 @@ function PlayerDataModule.addMasteryXP(player, styleId, amount)
 	if not data then return 0 end
 
 	if not data.Mastery[styleId] then
-		data.Mastery[styleId] = { XP = 0, Level = 1, TotalXP = 0 }
+		data.Mastery[styleId] = { XP = 0, Level = 1, TotalXP = 0, RebirthCount = 0 }
 	end
 
 	local mastery = data.Mastery[styleId]
+	mastery.RebirthCount = mastery.RebirthCount or 0
 	mastery.XP = mastery.XP + amount
 	mastery.TotalXP = mastery.TotalXP + amount
+	local maxLevel = MasteryModule.getMaxLevel(mastery.RebirthCount)
 
 	local levelsGained = 0
-	if mastery.Level < MASTERY_MAX_LEVEL then
-		local needed = PlayerDataModule.masteryXPForLevel(mastery.Level)
-		while mastery.XP >= needed and mastery.Level < MASTERY_MAX_LEVEL do
+	if mastery.Level < maxLevel then
+		local needed = PlayerDataModule.masteryXPForLevel(mastery.Level, mastery.RebirthCount)
+		while mastery.XP >= needed and mastery.Level < maxLevel do
 			mastery.XP = mastery.XP - needed
 			mastery.Level = mastery.Level + 1
 			levelsGained = levelsGained + 1
-			needed = PlayerDataModule.masteryXPForLevel(mastery.Level)
+			needed = PlayerDataModule.masteryXPForLevel(mastery.Level, mastery.RebirthCount)
 		end
 	end
 
@@ -990,7 +1036,18 @@ function PlayerDataModule.addMasteryXP(player, styleId, amount)
 		MasteryChanged = Remotes:FindFirstChild("MasteryChanged")
 	end
 	if MasteryChanged then
-		MasteryChanged:FireClient(player, styleId, mastery.Level, mastery.XP, PlayerDataModule.masteryXPForLevel(mastery.Level), mastery.TotalXP, levelsGained)
+		MasteryChanged:FireClient(
+			player,
+			styleId,
+			mastery.Level,
+			mastery.XP,
+			PlayerDataModule.masteryXPForLevel(mastery.Level, mastery.RebirthCount),
+			mastery.TotalXP,
+			levelsGained,
+			mastery.RebirthCount,
+			maxLevel,
+			MasteryModule.computeDamageMultiplier(mastery.Level, mastery.RebirthCount)
+		)
 	end
 
 	if levelsGained > 0 then
@@ -1000,11 +1057,103 @@ function PlayerDataModule.addMasteryXP(player, styleId, amount)
 	return levelsGained
 end
 
+function PlayerDataModule.getMasteryDamageMultiplier(player, styleId)
+	local mastery = PlayerDataModule.getMasteryData(player, styleId)
+	if not mastery then return 1 end
+	return MasteryModule.computeDamageMultiplier(mastery.Level, mastery.RebirthCount)
+end
+
+function PlayerDataModule.rebirthMastery(player, styleId)
+	local data = playerData[player]
+	if not data then return false, "No data" end
+	if not MASTERY_STYLE_LOOKUP[styleId] then
+		return false, "Unknown style"
+	end
+
+	local mastery = PlayerDataModule.getMasteryData(player, styleId)
+	local currentRebirth = mastery.RebirthCount or 0
+	local requiredLevel = MasteryModule.getMaxLevel(currentRebirth)
+	if mastery.Level < requiredLevel then
+		return false, "Must reach mastery level " .. requiredLevel
+	end
+
+	mastery.RebirthCount = currentRebirth + 1
+	mastery.Level = 1
+	mastery.XP = 0
+	local newMaxLevel = MasteryModule.getMaxLevel(mastery.RebirthCount)
+
+	if not MasteryChanged then
+		MasteryChanged = Remotes:FindFirstChild("MasteryChanged")
+	end
+	if MasteryChanged then
+		MasteryChanged:FireClient(
+			player,
+			styleId,
+			mastery.Level,
+			mastery.XP,
+			PlayerDataModule.masteryXPForLevel(mastery.Level, mastery.RebirthCount),
+			mastery.TotalXP,
+			0,
+			mastery.RebirthCount,
+			newMaxLevel,
+			MasteryModule.computeDamageMultiplier(mastery.Level, mastery.RebirthCount)
+		)
+	end
+
+	print(
+		"[PlayerDataModule] "
+			.. player.Name
+			.. " advanced "
+			.. styleId
+			.. " to mastery tier "
+			.. MasteryModule.getTier(mastery.RebirthCount)
+	)
+	return true
+end
+
 PlayerDataModule.MASTERY_STYLES = MASTERY_STYLES
-PlayerDataModule.MASTERY_MAX_LEVEL = MASTERY_MAX_LEVEL
+PlayerDataModule.MASTERY_MAX_LEVEL = MasteryModule.BASE_MAX_LEVEL
+
+-- ==================== RACE SYSTEM ====================
+function PlayerDataModule.getRaceData(player)
+	local data = playerData[player]
+	if not data then return nil end
+	return RaceModule.getPublicData(data.Race, data.RaceSpins)
+end
+
+function PlayerDataModule.setRace(player, raceId)
+	local data = playerData[player]
+	if not data or not RaceModule.RACES[raceId] then return false end
+	data.Race = raceId
+	PlayerDataModule.applyStatEffects(player)
+	PlayerDataModule.sendStatPointsUpdate(player)
+	return true
+end
+
+function PlayerDataModule.consumeRaceSpin(player)
+	local data = playerData[player]
+	if not data or (data.RaceSpins or 0) <= 0 then return false end
+	data.RaceSpins -= 1
+	return true
+end
 
 -- ==================== BOUNTY SYSTEM ====================
 local BountyChanged = Remotes:FindFirstChild("BountyChanged")
+
+local function notifyBountyChanged(player, bounty)
+	if not BountyChanged then
+		BountyChanged = Remotes:FindFirstChild("BountyChanged")
+	end
+	if BountyChanged then
+		BountyChanged:FireAllClients(player, bounty)
+	end
+
+	-- selene: allow(global_usage)
+	local bountyServer = shared and shared.BountyServer
+	if bountyServer and bountyServer.onBountyChanged then
+		bountyServer.onBountyChanged(player, bounty)
+	end
+end
 
 function PlayerDataModule.getBounty(player)
 	local data = playerData[player]
@@ -1014,26 +1163,48 @@ end
 
 function PlayerDataModule.addBounty(player, amount)
 	local data = playerData[player]
-	if not data then return end
-	data.Bounty = (data.Bounty or 0) + amount
-	if not BountyChanged then
-		BountyChanged = Remotes:FindFirstChild("BountyChanged")
-	end
-	if BountyChanged then
-		BountyChanged:FireAllClients(player, data.Bounty)
-	end
+	if not data then return 0 end
+	data.Bounty = math.max(0, (data.Bounty or 0) + (amount or 0))
+	notifyBountyChanged(player, data.Bounty)
+	return data.Bounty
 end
 
 function PlayerDataModule.setBounty(player, value)
 	local data = playerData[player]
-	if not data then return end
+	if not data then return 0 end
 	data.Bounty = math.max(0, value)
-	if not BountyChanged then
-		BountyChanged = Remotes:FindFirstChild("BountyChanged")
+	notifyBountyChanged(player, data.Bounty)
+	return data.Bounty
+end
+
+function PlayerDataModule.getPvPDamageMultiplier(player)
+	local data = playerData[player]
+	return BountyModule.getPvPDamageMultiplier(data and data.Bounty or 0)
+end
+
+function PlayerDataModule.applyPvpBountyTransfer(killer, defeated)
+	local killerData = playerData[killer]
+	local defeatedData = playerData[defeated]
+	if not killerData or not defeatedData then
+		return nil
 	end
-	if BountyChanged then
-		BountyChanged:FireAllClients(player, data.Bounty)
-	end
+
+	local transfer = BountyModule.calculatePvpTransfer(killerData.Bounty or 0, defeatedData.Bounty or 0)
+	killerData.Bounty = transfer.KillerBounty
+	defeatedData.Bounty = transfer.VictimBounty
+	notifyBountyChanged(killer, killerData.Bounty)
+	notifyBountyChanged(defeated, defeatedData.Bounty)
+	print(
+		"[PlayerDataModule] PvP bounty transfer: "
+			.. killer.Name
+			.. " +"
+			.. tostring(transfer.KillerGain)
+			.. ", "
+			.. defeated.Name
+			.. " -"
+			.. tostring(transfer.VictimLoss)
+	)
+	return transfer
 end
 
 return PlayerDataModule

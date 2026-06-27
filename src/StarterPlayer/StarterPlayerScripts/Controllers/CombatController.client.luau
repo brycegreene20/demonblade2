@@ -21,6 +21,7 @@ local BlockParryVFXRemote = Remotes:WaitForChild("BlockParryVFX")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local SkillSystemModule = require(Modules:WaitForChild("SkillSystemModule"))
+local MasteryModule = require(Modules:WaitForChild("MasteryModule"))
 
 local COMBO_RESET_TIME = 1.2
 local MAX_COMBO = 4
@@ -213,7 +214,97 @@ LightAttackRemote.OnClientEvent:Connect(function(serverComboIndex, didHit, sourc
 	comboIndex = serverComboIndex
 end)
 
-DamageDealt.OnClientEvent:Connect(function(targetModel, amount, _hitPos, isCritical)
+local function getImpactProfile(effectStyle, skillId)
+	if effectStyle == "WaterBreathing" then
+		return Color3.fromRGB(70, 210, 255), Color3.fromRGB(225, 250, 255), "rbxasset://sounds/electronicpingshort.wav", 1.45
+	elseif effectStyle == "FlameBreathing" then
+		return Color3.fromRGB(255, 105, 35), Color3.fromRGB(255, 220, 90), "rbxasset://sounds/impact_explosion_03.mp3", 1.18
+	elseif effectStyle == "TemariDemonArts" then
+		return Color3.fromRGB(255, 195, 75), Color3.fromRGB(160, 255, 180), "rbxasset://sounds/electronicpingshort.wav", 0.9
+	elseif effectStyle == "DemonArts" or effectStyle == "DemonEnemy" or string.find(skillId or "", "Demon") then
+		return Color3.fromRGB(220, 25, 45), Color3.fromRGB(120, 0, 180), "rbxasset://sounds/impact_explosion_03.mp3", 0.85
+	end
+	return Color3.fromRGB(255, 245, 160), Color3.fromRGB(255, 255, 255), "rbxasset://sounds/action_get_up.mp3", 0.75
+end
+
+local function playOneShotSound(parent, soundId, volume, playbackSpeed, rolloffDistance)
+	if not parent then return end
+	local sound = Instance.new("Sound")
+	sound.SoundId = soundId
+	sound.Volume = volume or 0.35
+	sound.PlaybackSpeed = playbackSpeed or 1
+	sound.RollOffMaxDistance = rolloffDistance or 65
+	sound.Parent = parent
+	sound:Play()
+	Debris:AddItem(sound, 2)
+end
+
+local function spawnDamageImpactVFX(targetModel, hitPos, isCritical, effectStyle, skillId)
+	local targetPart = targetModel:FindFirstChild("HumanoidRootPart") or targetModel:FindFirstChild("Head")
+	if not targetPart then return end
+
+	local primaryColor, secondaryColor, soundId, playbackSpeed = getImpactProfile(effectStyle, skillId)
+	local position = typeof(hitPos) == "Vector3" and hitPos or targetPart.Position
+	local anchor = Instance.new("Part")
+	anchor.Name = "DamageImpactVFX"
+	anchor.Size = Vector3.new(0.2, 0.2, 0.2)
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.CanTouch = false
+	anchor.Transparency = 1
+	anchor.CFrame = CFrame.new(position)
+	anchor.Parent = workspace
+
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = anchor
+
+	local burst = Instance.new("ParticleEmitter")
+	burst.Name = "StyleImpactBurst"
+	burst.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	burst.Color = ColorSequence.new(primaryColor, secondaryColor)
+	burst.LightEmission = 0.8
+	burst.Lifetime = NumberRange.new(0.18, 0.38)
+	burst.Rate = 0
+	burst.Speed = NumberRange.new(isCritical and 24 or 14, isCritical and 34 or 22)
+	burst.SpreadAngle = Vector2.new(180, 180)
+	burst.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, isCritical and 1.1 or 0.7),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	burst.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.05),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	burst.Parent = attachment
+	burst:Emit(isCritical and 36 or 20)
+
+	local ring = Instance.new("Part")
+	ring.Name = "StyleImpactRing"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.18, isCritical and 4.5 or 3, isCritical and 4.5 or 3)
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CanTouch = false
+	ring.Material = Enum.Material.Neon
+	ring.Color = primaryColor
+	ring.Transparency = 0.18
+	ring.CastShadow = false
+	ring.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Parent = workspace
+
+	TweenService:Create(ring, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.05, isCritical and 8 or 5, isCritical and 8 or 5),
+		Transparency = 1,
+	}):Play()
+
+	playOneShotSound(targetPart, soundId, isCritical and 0.42 or 0.28, playbackSpeed, 70)
+	Debris:AddItem(ring, 0.35)
+	Debris:AddItem(anchor, 1)
+end
+
+DamageDealt.OnClientEvent:Connect(function(targetModel, amount, hitPos, isCritical, effectStyle, skillId)
 	if not targetModel or not targetModel.Parent then return end
 
 	local billboard = Instance.new("BillboardGui")
@@ -225,6 +316,8 @@ DamageDealt.OnClientEvent:Connect(function(targetModel, amount, _hitPos, isCriti
 
 	local targetPart = targetModel:FindFirstChild("HumanoidRootPart") or targetModel:FindFirstChild("Head")
 	if not targetPart then return end
+	local primaryColor = getImpactProfile(effectStyle, skillId)
+	spawnDamageImpactVFX(targetModel, hitPos, isCritical, effectStyle, skillId)
 	billboard.Adornee = targetPart
 	billboard.Parent = targetPart
 
@@ -232,7 +325,7 @@ DamageDealt.OnClientEvent:Connect(function(targetModel, amount, _hitPos, isCriti
 	label.Size = UDim2.fromScale(1, 1)
 	label.BackgroundTransparency = 1
 	label.Text = tostring(math.floor(amount))
-	label.TextColor3 = isCritical and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(255, 255, 100)
+	label.TextColor3 = isCritical and Color3.fromRGB(255, 50, 50) or primaryColor
 	label.TextStrokeTransparency = 0.3
 	label.TextStrokeColor3 = Color3.new(0, 0, 0)
 	label.Font = Enum.Font.GothamBold
@@ -278,7 +371,7 @@ local SLOT_KEYS = {
 	[Enum.KeyCode.ButtonL2] = "R",
 	[Enum.KeyCode.ButtonY] = "F",
 	[Enum.KeyCode.ButtonB] = "V",
-	[Enum.KeyCode.DPadUp] = "Y",
+	[Enum.KeyCode.DPadRight] = "Y",
 }
 
 local SKILL_VFX_COLORS = {
@@ -314,7 +407,9 @@ local function buildSkillSlots(faction)
 		local skill = SkillSystemModule.getSkillForSlot(faction, slot)
 		if skill then
 			local mastery = _clientMastery[skill.Style or ""]
-			local masteryLevel = mastery and (mastery.Level or 1) or 1
+			local masteryLevel = mastery
+				and MasteryModule.getEffectiveUnlockLevel(mastery.Level, mastery.RebirthCount)
+				or 1
 			if masteryLevel >= (skill.MasteryLevelRequired or 1) then
 				skillSlots[slot] = skill
 			end
@@ -334,13 +429,15 @@ local function cacheMastery(mastery)
 	_clientMastery = typeof(mastery) == "table" and mastery or {}
 end
 
-local function cacheMasteryEntry(styleId, level, xp, xpNeeded, totalXP)
+local function cacheMasteryEntry(styleId, level, xp, xpNeeded, totalXP, rebirthCount, maxLevel)
 	if typeof(styleId) ~= "string" or styleId == "" then return end
 	_clientMastery[styleId] = {
 		Level = level or 1,
 		XP = xp or 0,
 		XPNeeded = xpNeeded or 30,
 		TotalXP = totalXP or 0,
+		RebirthCount = rebirthCount or 0,
+		MaxLevel = maxLevel or MasteryModule.getMaxLevel(rebirthCount),
 	}
 	rebuildCurrentSkillSlots()
 end
@@ -363,7 +460,7 @@ skillBarGui.IgnoreGuiInset = true
 skillBarGui.DisplayOrder = 6
 skillBarGui.Parent = PlayerGui
 
-local SLOT_ORDER = { Q = 1, E = 2, R = 3, F = 4, V = 5, Y = 6 }
+local SLOT_ORDER = { Q = 1, E = 2, R = 3, F = 4, Y = 5, V = 6 }
 local ULTIMATE_SLOT = "V"
 
 local skillBarContainer = Instance.new("Frame")
@@ -482,7 +579,7 @@ local function createSkillSlotUI(slotKey)
 
 	local iconLabel = Instance.new("TextLabel")
 	iconLabel.Name = "Icon"
-	iconLabel.Size = UDim2.new(1, 0, 0, 28)
+	iconLabel.Size = UDim2.new(1, 0, 0, 24)
 	iconLabel.Position = UDim2.fromOffset(0, 12)
 	iconLabel.BackgroundTransparency = 1
 	iconLabel.Font = Enum.Font.GothamBold
@@ -492,6 +589,21 @@ local function createSkillSlotUI(slotKey)
 	iconLabel.ZIndex = 3
 	iconLabel.Parent = frame
 
+	local unlockLabel = Instance.new("TextLabel")
+	unlockLabel.Name = "UnlockLabel"
+	unlockLabel.Size = UDim2.new(1, -4, 0, 10)
+	unlockLabel.Position = UDim2.new(0, 2, 1, -27)
+	unlockLabel.BackgroundTransparency = 1
+	unlockLabel.Font = Enum.Font.GothamBold
+	unlockLabel.TextSize = if isUlt then 9 else 8
+	unlockLabel.TextColor3 = if isUlt then Color3.fromRGB(255, 230, 120) else Color3.fromRGB(120, 190, 255)
+	unlockLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	unlockLabel.TextStrokeTransparency = 0.55
+	unlockLabel.Text = ""
+	unlockLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	unlockLabel.ZIndex = 3
+	unlockLabel.Parent = frame
+
 	return {
 		Frame = frame,
 		KeyLabel = keyLabel,
@@ -499,13 +611,79 @@ local function createSkillSlotUI(slotKey)
 		CdOverlay = cdOverlay,
 		CdText = cdText,
 		IconLabel = iconLabel,
+		UnlockLabel = unlockLabel,
 		Stroke = stroke,
 	}
 end
 
-for _, slot in {"Q", "E", "R", "F", "V", "Y"} do
+for _, slot in {"Q", "E", "R", "F", "Y", "V"} do
 	skillSlotFrames[slot] = createSkillSlotUI(slot)
 end
+
+local updateBlockHintPrompt = function(_mode) end
+
+local function initBlockHintUI()
+	local blockHint = Instance.new("Frame")
+	blockHint.Name = "BlockHint"
+	blockHint.Size = UDim2.fromOffset(98, 44)
+	blockHint.Position = UDim2.new(0.5, 232, 1, -30)
+	blockHint.AnchorPoint = Vector2.new(0, 1)
+	blockHint.BackgroundColor3 = Color3.fromRGB(12, 17, 25)
+	blockHint.BackgroundTransparency = 0.12
+	blockHint.BorderSizePixel = 0
+	blockHint.Parent = skillBarGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = blockHint
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(95, 180, 255)
+	stroke.Thickness = 1.5
+	stroke.Transparency = 0.25
+	stroke.Parent = blockHint
+
+	local keyBox = Instance.new("TextLabel")
+	keyBox.Name = "KeyBox"
+	keyBox.Size = UDim2.fromOffset(34, 30)
+	keyBox.Position = UDim2.fromOffset(7, 7)
+	keyBox.BackgroundColor3 = Color3.fromRGB(25, 35, 50)
+	keyBox.BackgroundTransparency = 0.05
+	keyBox.BorderSizePixel = 0
+	keyBox.Font = Enum.Font.GothamBold
+	keyBox.TextSize = 13
+	keyBox.TextColor3 = Color3.fromRGB(210, 235, 255)
+	keyBox.Text = "G"
+	keyBox.Parent = blockHint
+
+	local keyCorner = Instance.new("UICorner")
+	keyCorner.CornerRadius = UDim.new(0, 6)
+	keyCorner.Parent = keyBox
+
+	local label = Instance.new("TextLabel")
+	label.Name = "Label"
+	label.Size = UDim2.new(1, -48, 1, 0)
+	label.Position = UDim2.fromOffset(46, 0)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 13
+	label.TextColor3 = Color3.fromRGB(225, 238, 255)
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Text = "Block"
+	label.Parent = blockHint
+
+	updateBlockHintPrompt = function(mode)
+		if mode == "Xbox" then
+			keyBox.Text = "LB"
+		elseif mode == "PlayStation" then
+			keyBox.Text = "L1"
+		else
+			keyBox.Text = "G"
+		end
+	end
+end
+
+initBlockHintUI()
 
 local SLOT_ICONS = {
 	Q = "🌊",
@@ -520,9 +698,14 @@ updateSkillBarUI = function()
 	for slot, ui in skillSlotFrames do
 		local isUlt = slot == ULTIMATE_SLOT
 		local skill = skillSlots[slot]
+		local styleToUse = _currentStyle ~= "" and _currentStyle or _currentFaction
+		local visibleSkill = skill or SkillSystemModule.getSkillForSlot(styleToUse, slot)
+		local unlockLevel = visibleSkill and (visibleSkill.MasteryLevelRequired or 1) or nil
 		if skill then
 			ui.NameLabel.Text = skill.Name
 			ui.IconLabel.Text = skill.Icon or SLOT_ICONS[slot] or "✦"
+			ui.UnlockLabel.Text = unlockLevel and ("M" .. tostring(unlockLevel)) or ""
+			ui.UnlockLabel.TextColor3 = if isUlt then Color3.fromRGB(255, 230, 120) else Color3.fromRGB(120, 190, 255)
 			ui.Frame.BackgroundTransparency = 0.2
 			local color = SKILL_VFX_COLORS[skill.Id] or Color3.fromRGB(120, 120, 180)
 			ui.Stroke.Color = if isUlt then Color3.fromRGB(255, 200, 50) else color
@@ -530,6 +713,8 @@ updateSkillBarUI = function()
 		else
 			ui.NameLabel.Text = "Locked"
 			ui.IconLabel.Text = "🔒"
+			ui.UnlockLabel.Text = unlockLevel and ("Unlock M" .. tostring(unlockLevel)) or ""
+			ui.UnlockLabel.TextColor3 = Color3.fromRGB(150, 150, 165)
 			ui.Frame.BackgroundTransparency = 0.5
 			ui.Stroke.Color = if isUlt then Color3.fromRGB(130, 100, 25) else Color3.fromRGB(40, 40, 50)
 			ui.Stroke.Thickness = if isUlt then 2.5 else 1.5
@@ -540,7 +725,6 @@ end
 local VFXAssets = ReplicatedStorage:WaitForChild("VFXAssets")
 local AnimeParticles = VFXAssets:WaitForChild("AnimeParticles"):WaitForChild("Anime")
 local DSKit = VFXAssets:WaitForChild("DemonSlayerKit")
-local BigEffects = VFXAssets:WaitForChild("BigEffects"):WaitForChild("Big")
 local TanjiroSlash = VFXAssets:WaitForChild("TanjiroWaterSlash"):WaitForChild("Slash")
 
 local function prepMesh(mesh, col, trans, size, cf)
@@ -608,43 +792,6 @@ local function spawnTanjiroSlash(cf, size, color, transparency, duration)
 	end
 	clone.Parent = workspace
 	if duration then
-		Debris:AddItem(clone, duration)
-	end
-	return clone
-end
-
-local function _spawnBigEffect(name, cf, color, duration)
-	local source = BigEffects:FindFirstChild(name)
-	if not source then return nil end
-	local clone = source:Clone()
-	clone.Anchored = true
-	clone.CanCollide = false
-	clone.CanQuery = false
-	clone.CanTouch = false
-	clone.CastShadow = false
-	if color then
-		clone.Color = color
-	end
-	clone.CFrame = cf
-	clone.Parent = workspace
-	local att = clone:FindFirstChildWhichIsA("Attachment", true)
-	if att then
-		for _, pe in att:GetChildren() do
-			if pe:IsA("ParticleEmitter") and color then
-				pe.Color = ColorSequence.new(color, Color3.fromRGB(180, 230, 255))
-			end
-		end
-	end
-	if duration then
-		task.delay(duration * 0.6, function()
-			if att then
-				for _, pe in att:GetChildren() do
-					if pe:IsA("ParticleEmitter") then
-						pe.Enabled = false
-					end
-				end
-			end
-		end)
 		Debris:AddItem(clone, duration)
 	end
 	return clone
@@ -2258,18 +2405,79 @@ local WATER_SKILL_VFX = {
 	WaterDragon = vfxWaterDragon,
 }
 
+local function spawnCastAccent(hrp, skill)
+	local primaryColor, secondaryColor = getImpactProfile(skill.Style, skill.Id)
+	local castPart = Instance.new("Part")
+	castPart.Name = "SkillCastAccent"
+	castPart.Size = Vector3.new(0.2, 0.2, 0.2)
+	castPart.Anchored = true
+	castPart.CanCollide = false
+	castPart.CanQuery = false
+	castPart.CanTouch = false
+	castPart.Transparency = 1
+	castPart.CFrame = hrp.CFrame * CFrame.new(0, -2.4, -1)
+	castPart.Parent = workspace
+
+	local ring = Instance.new("Part")
+	ring.Name = "SkillCastRing"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.12, 3.5, 3.5)
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CanTouch = false
+	ring.Material = Enum.Material.Neon
+	ring.Color = primaryColor
+	ring.Transparency = 0.18
+	ring.CastShadow = false
+	ring.CFrame = castPart.CFrame * CFrame.Angles(0, 0, math.rad(90))
+	ring.Parent = workspace
+
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = castPart
+	local motes = Instance.new("ParticleEmitter")
+	motes.Name = "SkillCastMotes"
+	motes.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	motes.Color = ColorSequence.new(primaryColor, secondaryColor)
+	motes.LightEmission = 0.8
+	motes.Lifetime = NumberRange.new(0.28, 0.55)
+	motes.Rate = 0
+	motes.Speed = NumberRange.new(8, 16)
+	motes.SpreadAngle = Vector2.new(95, 95)
+	motes.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, skill.Slot == "V" and 0.8 or 0.45),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	motes.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.05),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	motes.Parent = attachment
+	motes:Emit(skill.Slot == "V" and 42 or 24)
+
+	TweenService:Create(ring, TweenInfo.new(0.38, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.04, skill.Slot == "V" and 10 or 6, skill.Slot == "V" and 10 or 6),
+		Transparency = 1,
+	}):Play()
+
+	Debris:AddItem(ring, 0.45)
+	Debris:AddItem(castPart, 1.1)
+end
+
 local function spawnSkillVFX(character, skillId)
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
+
+	local skill = SkillSystemModule.getSkill(skillId)
+	if not skill then return end
+
+	spawnCastAccent(hrp, skill)
 
 	local waterHandler = WATER_SKILL_VFX[skillId]
 	if waterHandler then
 		waterHandler(hrp)
 		return
 	end
-
-	local skill = SkillSystemModule.getSkill(skillId)
-	if not skill then return end
 
 	if skill.Style == "FlameBreathing" then
 		spawnFlameVFX(hrp, skillId, skill)
@@ -2285,16 +2493,43 @@ local function spawnSkillVFX(character, skillId)
 	spawnDemonVFXGeneric(hrp, skillId, color, skill)
 end
 
-local function playSkillSound(character)
+local function playSkillSound(character, skillId, volumeScale)
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
-	local sound = Instance.new("Sound")
-	sound.SoundId = "rbxasset://sounds/action_get_up.mp3"
-	sound.Volume = 0.5
-	sound.PlaybackSpeed = 0.6
-	sound.Parent = hrp
-	sound:Play()
-	Debris:AddItem(sound, 1.5)
+
+	local skill = SkillSystemModule.getSkill(skillId)
+	local style = skill and skill.Style or ""
+	local scale = volumeScale or 1
+	local soundId = "rbxasset://sounds/action_get_up.mp3"
+	local volume = 0.32 * scale
+	local speed = 0.72
+
+	if style == "WaterBreathing" then
+		soundId = "rbxasset://sounds/electronicpingshort.wav"
+		volume = 0.26 * scale
+		speed = 1.55
+	elseif style == "FlameBreathing" then
+		soundId = "rbxasset://sounds/impact_explosion_03.mp3"
+		volume = 0.36 * scale
+		speed = 1.18
+	elseif style == "TemariDemonArts" then
+		soundId = "rbxasset://sounds/electronicpingshort.wav"
+		volume = 0.28 * scale
+		speed = 0.92
+	elseif style == "DemonArts" then
+		soundId = "rbxasset://sounds/impact_explosion_03.mp3"
+		volume = 0.32 * scale
+		speed = 0.82
+	end
+
+	playOneShotSound(hrp, soundId, volume, speed, 95)
+	if skill and skill.Slot == "V" then
+		task.delay(0.12, function()
+			if hrp and hrp.Parent then
+				playOneShotSound(hrp, "rbxasset://sounds/impact_explosion_03.mp3", 0.28 * scale, speed * 0.75, 100)
+			end
+		end)
+	end
 end
 
 local function skillCameraShake()
@@ -2347,8 +2582,13 @@ SkillActivatedRemote.OnClientEvent:Connect(function(playerOrSkillId, skillIdOrCo
 
 		local character = getCharacter()
 		if character then
-			spawnSkillVFX(character, skillId)
-			playSkillSound(character)
+			-- selene: allow(global_usage)
+			if _G.SkillVFX then
+				_G.SkillVFX.play(character, skillId)
+			else
+				spawnSkillVFX(character, skillId)
+				playSkillSound(character, skillId)
+			end
 			skillCameraShake()
 		end
 
@@ -2365,7 +2605,13 @@ SkillActivatedRemote.OnClientEvent:Connect(function(playerOrSkillId, skillIdOrCo
 		local otherPlayer = playerOrSkillId
 		local skillId = skillIdOrCooldown
 		if otherPlayer ~= LocalPlayer and otherPlayer.Character then
-			spawnSkillVFX(otherPlayer.Character, skillId)
+			-- selene: allow(global_usage)
+			if _G.SkillVFX then
+				_G.SkillVFX.play(otherPlayer.Character, skillId)
+			else
+				spawnSkillVFX(otherPlayer.Character, skillId)
+				playSkillSound(otherPlayer.Character, skillId, 0.55)
+			end
 		end
 	end
 end)
@@ -2476,6 +2722,27 @@ local function createBlockShield(character)
 	pulseUp:Play()
 	blockShieldTween = pulseUp
 
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = shield
+	local shimmer = Instance.new("ParticleEmitter")
+	shimmer.Name = "BlockShieldShimmer"
+	shimmer.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	shimmer.Color = ColorSequence.new(Color3.fromRGB(120, 210, 255), Color3.fromRGB(255, 255, 255))
+	shimmer.LightEmission = 0.7
+	shimmer.Lifetime = NumberRange.new(0.25, 0.45)
+	shimmer.Rate = 38
+	shimmer.Speed = NumberRange.new(0.5, 2.5)
+	shimmer.SpreadAngle = Vector2.new(180, 180)
+	shimmer.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.18),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	shimmer.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.2),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	shimmer.Parent = attachment
+
 	task.spawn(function()
 		while blockShieldPart and blockShieldPart.Parent and isBlocking do
 			if hrp and hrp.Parent then
@@ -2499,6 +2766,34 @@ local function destroyBlockShield()
 		Debris:AddItem(blockShieldPart, 0.2)
 		blockShieldPart = nil
 	end
+end
+
+local function spawnBlockStartVFX(character)
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	local ring = Instance.new("Part")
+	ring.Name = "BlockStartRing"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.12, 4, 4)
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CanTouch = false
+	ring.Material = Enum.Material.Neon
+	ring.Color = Color3.fromRGB(110, 200, 255)
+	ring.Transparency = 0.25
+	ring.CastShadow = false
+	ring.CFrame = hrp.CFrame * CFrame.new(0, -1.8, 0) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Parent = workspace
+
+	TweenService:Create(ring, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.04, 7, 7),
+		Transparency = 1,
+	}):Play()
+
+	playOneShotSound(hrp, "rbxasset://sounds/electronicpingshort.wav", 0.18, 0.78, 55)
+	Debris:AddItem(ring, 0.3)
 end
 
 local function stopBlock()
@@ -2534,6 +2829,7 @@ local function startBlock()
 	blockPressTime = os.clock()
 	BlockRemote:FireServer(true)
 	createBlockShield(character)
+	spawnBlockStartVFX(character)
 
 	if blockSafetyThread then
 		task.cancel(blockSafetyThread)
@@ -2546,9 +2842,11 @@ local function startBlock()
 	end)
 end
 
-local function spawnParrySuccessVFX(character)
+local function spawnParrySuccessVFX(character, brokeStamina)
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
+	local parryColor = brokeStamina and Color3.fromRGB(255, 90, 40) or Color3.fromRGB(255, 230, 100)
+	local ringColor = brokeStamina and Color3.fromRGB(255, 190, 80) or Color3.fromRGB(255, 255, 200)
 
 	local flash = Instance.new("Part")
 	flash.Name = "ParryFlash"
@@ -2559,7 +2857,7 @@ local function spawnParrySuccessVFX(character)
 	flash.CanQuery = false
 	flash.CanTouch = false
 	flash.Material = Enum.Material.Neon
-	flash.Color = Color3.fromRGB(255, 230, 100)
+	flash.Color = parryColor
 	flash.Transparency = 0
 	flash.CastShadow = false
 	flash.CFrame = hrp.CFrame
@@ -2580,7 +2878,7 @@ local function spawnParrySuccessVFX(character)
 	ring.CanQuery = false
 	ring.CanTouch = false
 	ring.Material = Enum.Material.Neon
-	ring.Color = Color3.fromRGB(255, 255, 200)
+	ring.Color = ringColor
 	ring.Transparency = 0.2
 	ring.CastShadow = false
 	ring.CFrame = hrp.CFrame * CFrame.Angles(0, 0, math.rad(90))
@@ -2592,13 +2890,29 @@ local function spawnParrySuccessVFX(character)
 	}):Play()
 	Debris:AddItem(ring, 0.35)
 
-	local sound = Instance.new("Sound")
-	sound.SoundId = "rbxasset://sounds/impact_explosion_03.mp3"
-	sound.Volume = 0.6
-	sound.PlaybackSpeed = 1.4
-	sound.Parent = hrp
-	sound:Play()
-	Debris:AddItem(sound, 1)
+	local sparks = Instance.new("ParticleEmitter")
+	sparks.Name = "ParrySparks"
+	sparks.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	sparks.Color = ColorSequence.new(ringColor, Color3.fromRGB(255, 255, 255))
+	sparks.LightEmission = 1
+	sparks.Lifetime = NumberRange.new(0.15, 0.35)
+	sparks.Rate = 0
+	sparks.Speed = NumberRange.new(brokeStamina and 26 or 18, brokeStamina and 40 or 28)
+	sparks.SpreadAngle = Vector2.new(180, 180)
+	sparks.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, brokeStamina and 0.55 or 0.35),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	sparks.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = flash
+	sparks.Parent = attachment
+	sparks:Emit(brokeStamina and 55 or 34)
+
+	playOneShotSound(hrp, "rbxasset://sounds/impact_explosion_03.mp3", brokeStamina and 0.58 or 0.42, brokeStamina and 0.95 or 1.4, 80)
 end
 
 local function spawnGuardBreakVFX(character)
@@ -2648,10 +2962,13 @@ local function playWhiffSound(character)
 	Debris:AddItem(sound, 1)
 end
 
-BlockParryVFXRemote.OnClientEvent:Connect(function(eventType, sourcePlayer, character, _attackerModel)
+BlockParryVFXRemote.OnClientEvent:Connect(function(eventType, sourcePlayer, character, attackerModel, brokeStamina)
 	if eventType == "parrySuccess" then
 		if character and character.Parent then
-			spawnParrySuccessVFX(character)
+			spawnParrySuccessVFX(character, brokeStamina)
+		end
+		if brokeStamina and attackerModel and attackerModel.Parent then
+			spawnGuardBreakVFX(attackerModel)
 		end
 	elseif eventType == "parryWhiff" then
 		if sourcePlayer == LocalPlayer then
@@ -2667,6 +2984,10 @@ BlockParryVFXRemote.OnClientEvent:Connect(function(eventType, sourcePlayer, char
 				isBlocking = false
 				destroyBlockShield()
 			end
+		end
+	elseif eventType == "blockStart" then
+		if sourcePlayer ~= LocalPlayer and character and character.Parent then
+			spawnBlockStartVFX(character)
 		end
 	end
 end)
@@ -2724,7 +3045,7 @@ local XBOX_SLOT_LABELS = {
 	R = "LT",
 	F = "Y",
 	V = "B",
-	Y = "D↑",
+	Y = "D→",
 }
 
 local PS_SLOT_LABELS = {
@@ -2733,7 +3054,7 @@ local PS_SLOT_LABELS = {
 	R = "L2",
 	F = "△",
 	V = "○",
-	Y = "D↑",
+	Y = "D→",
 }
 
 local KEYBOARD_SLOT_LABELS = {
@@ -2758,6 +3079,7 @@ local function updateSkillBarPrompts()
 	for slot, ui in skillSlotFrames do
 		ui.KeyLabel.Text = labels[slot] or slot
 	end
+	updateBlockHintPrompt(mode)
 end
 
 InputModeValue.Changed:Connect(function()
@@ -2893,14 +3215,14 @@ if not MasteryChangedRemote then
 end
 
 if MasteryChangedRemote then
-	MasteryChangedRemote.OnClientEvent:Connect(function(styleId, level, xp, xpNeeded, totalXP, levelsGained)
-		cacheMasteryEntry(styleId, level, xp, xpNeeded, totalXP)
+	MasteryChangedRemote.OnClientEvent:Connect(function(styleId, level, xp, xpNeeded, totalXP, levelsGained, rebirthCount, maxLevel)
+		cacheMasteryEntry(styleId, level, xp, xpNeeded, totalXP, rebirthCount, maxLevel)
 		currentMasteryStyleId = getActiveStyleId()
 		if styleId == getActiveStyleId() or styleId == currentMasteryStyleId then
 			if levelsGained > 0 then
 				local displayName = getStyleDisplayName(styleId)
 				queueMilestone(
-					displayName .. " - Mastery " .. level .. " reached",
+					displayName .. " - Tier " .. ((rebirthCount or 0) + 1) .. " Mastery " .. level,
 					"New forms may be available."
 				)
 			end

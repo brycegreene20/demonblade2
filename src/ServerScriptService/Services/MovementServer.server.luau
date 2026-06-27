@@ -303,6 +303,8 @@ GetPlayerDataRemote.OnServerInvoke = function(player)
 		Titles = data.Titles or {},
 		Inventory = data.Inventory or {},
 		Mastery = data.Mastery or {},
+		Race = data.Race or "Human",
+		RaceSpins = data.RaceSpins or 0,
 	}
 	for _, key in ipairs(StatConfig.STAT_KEYS) do
 		result[key] = data[key] or 0

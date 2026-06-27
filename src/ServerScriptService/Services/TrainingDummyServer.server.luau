@@ -28,8 +28,8 @@ local function debugRewardLog(message)
 	end
 end
 
-local GRID_ORIGIN_X = 10
-local GRID_ORIGIN_Z = 8
+local GRID_ORIGIN_X = 30
+local GRID_ORIGIN_Z = 28
 local GRID_COLS = 4
 local GRID_ROWS = 3
 local GRID_SPACING = 8

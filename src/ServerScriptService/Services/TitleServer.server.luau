@@ -5,6 +5,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local EquipTitleRemote = Remotes:WaitForChild("EquipTitle")
 local TitleRebirthRemote = Remotes:WaitForChild("TitleRebirth")
+local MasteryRebirthRemote = Remotes:WaitForChild("MasteryRebirth")
 local FactionChosenRemote = Remotes:WaitForChild("FactionChosen")
 local StyleChangedRemote = Remotes:WaitForChild("StyleChanged")
 local InventoryChangedRemote = Remotes:WaitForChild("InventoryChanged")
@@ -80,6 +81,17 @@ TitleRebirthRemote.OnServerEvent:Connect(function(player, titleId)
 
 	syncCacheFromData(player)
 	print("[TitleServer] " .. player.Name .. " rebirthd title: " .. titleId)
+end)
+
+MasteryRebirthRemote.OnServerEvent:Connect(function(player, styleId)
+	if typeof(styleId) ~= "string" then return end
+	local success, msg = PlayerDataModule.rebirthMastery(player, styleId)
+	if not success then
+		warn("[TitleServer] Mastery rebirth failed for " .. player.Name .. " (" .. styleId .. "): " .. (msg or "?"))
+		return
+	end
+	syncCacheFromData(player)
+	print("[TitleServer] " .. player.Name .. " advanced mastery tier for " .. styleId)
 end)
 
 Players.PlayerRemoving:Connect(function(_player)

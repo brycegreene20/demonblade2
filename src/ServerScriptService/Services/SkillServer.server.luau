@@ -69,7 +69,9 @@ local function applySkillDamage(player, skill, hitIndex)
 	local hitCharacters = SkillSystemModule.getHitCharacters(parts, character)
 
 	local damageMultiplier = PlayerDataModule.getDamageMultiplier(player)
-	local damage = skill.BaseDamage * damageMultiplier
+	local masteryMultiplier = PlayerDataModule.getMasteryDamageMultiplier(player, skill.Style)
+	local damage = skill.BaseDamage * damageMultiplier * masteryMultiplier
+	local appliedHitCount = 0
 
 	for _, target in hitCharacters do
 		local humanoid = target:FindFirstChildOfClass("Humanoid")
@@ -77,26 +79,33 @@ local function applySkillDamage(player, skill, hitIndex)
 			if CombatModule.isModelInSafeZone(target) or CombatModule.isModelInSafeZone(character) then
 				continue
 			end
+			if not CombatModule.canPlayerDamageTarget(player, target) then
+				continue
+			end
 			local finalDmg = damage
 			local targetPlayer = game:GetService("Players"):GetPlayerFromCharacter(target)
 			if targetPlayer then
 				local defenseMult = PlayerDataModule.getDefenseMultiplier(targetPlayer)
 				finalDmg = damage * (1 - defenseMult)
+				if targetPlayer ~= player then
+					finalDmg *= PlayerDataModule.getPvPDamageMultiplier(player)
+				end
 			end
 
 			humanoid:TakeDamage(finalDmg)
+			appliedHitCount += 1
 
 			target:SetAttribute("LastAttacker", player.UserId)
 			CombatModule.recordDamageContribution(target, player, finalDmg)
 
 			local targetHRP = target:FindFirstChild("HumanoidRootPart")
 			local hitPos = targetHRP and targetHRP.Position or Vector3.zero
-			DamageDealt:FireAllClients(target, finalDmg, hitPos, hitIndex == 1)
+			DamageDealt:FireAllClients(target, finalDmg, hitPos, hitIndex == 1, skill.Style or skill.Faction or "", skill.Id)
 		end
 	end
 
 	-- Award title XP for each enemy hit
-	if #hitCharacters > 0 then
+	if appliedHitCount > 0 then
 		local data = PlayerDataModule.getData(player)
 		local equippedTitle = data and (data.EquippedTitle or "")
 		if data and data.EquippedStyle and data.EquippedStyle ~= "" then
@@ -104,11 +113,11 @@ local function applySkillDamage(player, skill, hitIndex)
 		end
 		if equippedTitle ~= "" then
 			local xpPerHit = math.floor(10 + skill.BaseDamage * 0.1)
-			PlayerDataModule.addTitleXP(player, equippedTitle, xpPerHit * #hitCharacters)
+			PlayerDataModule.addTitleXP(player, equippedTitle, xpPerHit * appliedHitCount)
 		end
 	end
 
-	return #hitCharacters, damage
+	return appliedHitCount, damage
 end
 
 UseSkillRemote.OnServerEvent:Connect(function(player, skillId)

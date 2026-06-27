@@ -7,8 +7,8 @@ local ZoneChangedRemote = Remotes:WaitForChild("ZoneChanged")
 
 local ZONE_CHECK_INTERVAL = 0.5
 local SAFE_ZONE_NAME = "SafeZone"
-local SAFE_ZONE_CENTER = Vector3.new(-8, 4, -4)
-local SAFE_ZONE_SIZE = Vector3.new(28, 16, 28)
+local SAFE_ZONE_CENTER = Vector3.new(-4, 4, -4)
+local SAFE_ZONE_SIZE = Vector3.new(46, 16, 46)
 local DEBUG_ZONE_CHANGES = false
 
 local zonesFolder = workspace:FindFirstChild("Zones")

@@ -6,6 +6,7 @@ local LightAttackRemote = Remotes:WaitForChild("LightAttack")
 local BlockRemote = Remotes:WaitForChild("Block")
 local ParryAttemptRemote = Remotes:WaitForChild("ParryAttempt")
 local BlockParryVFXRemote = Remotes:WaitForChild("BlockParryVFX")
+local CombatMessageRemote = Remotes:WaitForChild("CombatMessage")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local CombatModule = require(Modules:WaitForChild("CombatModule"))
@@ -21,6 +22,8 @@ local _GUARD_BREAK_STAGGER = CombatModule.GUARD_BREAK_STAGGER
 local GUARD_BREAK_REBLOCK_CD = CombatModule.GUARD_BREAK_REBLOCK_COOLDOWN
 local PARRY_WHIFF_STAMINA = CombatModule.PARRY_WHIFF_STAMINA
 local PARRY_STAGGER_DURATION = CombatModule.PARRY_STAGGER_DURATION
+local PARRY_BREAK_STUN_DURATION = CombatModule.PARRY_BREAK_STUN_DURATION
+local PARRY_STAMINA_DAMAGE = CombatModule.PARRY_STAMINA_DAMAGE
 
 local playerCombos = {}
 local playerAttacking = {}
@@ -120,17 +123,28 @@ ParryAttemptRemote.OnServerEvent:Connect(function(player)
 			humanoid.Health = math.min(humanoid.Health + 0, humanoid.MaxHealth)
 		end
 
+		local drainedStamina = 0
+		local remainingStamina = nil
+		local brokeAttackerStamina = false
+
 		if attackerModel then
-			CombatModule.applyParryStagger(attackerModel)
+			local attackerPlayer = Players:GetPlayerFromCharacter(attackerModel)
+			if attackerPlayer then
+				drainedStamina, remainingStamina = PlayerDataModule.drainStamina(attackerPlayer, PARRY_STAMINA_DAMAGE)
+				brokeAttackerStamina = remainingStamina <= 0
+			end
+
+			local stunDuration = brokeAttackerStamina and PARRY_BREAK_STUN_DURATION or PARRY_STAGGER_DURATION
+			CombatModule.applyParryStagger(attackerModel, stunDuration)
 
 			local attackerHumanoid = attackerModel:FindFirstChildOfClass("Humanoid")
 			if attackerHumanoid then
 				attackerHumanoid.WalkSpeed = 0
-				task.delay(PARRY_STAGGER_DURATION, function()
+				task.delay(stunDuration, function()
 					if attackerHumanoid and attackerHumanoid.Parent then
-						local attackerPlayer = Players:GetPlayerFromCharacter(attackerModel)
-						if attackerPlayer then
-							local data = PlayerDataModule.getData(attackerPlayer)
+						local stunRecoverPlayer = Players:GetPlayerFromCharacter(attackerModel)
+						if stunRecoverPlayer then
+							local data = PlayerDataModule.getData(stunRecoverPlayer)
 							attackerHumanoid.WalkSpeed = data and data.WalkSpeed or 24
 						else
 							attackerHumanoid.WalkSpeed = 24
@@ -140,8 +154,13 @@ ParryAttemptRemote.OnServerEvent:Connect(function(player)
 			end
 		end
 
-		BlockParryVFXRemote:FireAllClients("parrySuccess", player, character, attackerModel)
-		print("[CombatServer] Perfect parry by " .. player.Name)
+		BlockParryVFXRemote:FireAllClients("parrySuccess", player, character, attackerModel, brokeAttackerStamina)
+		print(("[CombatServer] Perfect parry by %s (attacker stamina -%s, remaining %s, broke=%s)"):format(
+			player.Name,
+			tostring(drainedStamina),
+			tostring(remainingStamina or "npc"),
+			tostring(brokeAttackerStamina)
+		))
 	else
 		PlayerDataModule.consumeStamina(player, PARRY_WHIFF_STAMINA)
 		BlockParryVFXRemote:FireAllClients("parryWhiff", player, character)
@@ -195,10 +214,33 @@ local function onCharacterAdded(player, character)
 		if not killer or killer == player then return end
 
 		local data = PlayerDataModule.getData(killer)
-		if not data or not data.EquippedStyle or data.EquippedStyle == "" then return end
+		if data and data.EquippedStyle and data.EquippedStyle ~= "" then
+			PlayerDataModule.addMasteryXP(killer, data.EquippedStyle, MASTERY_XP_PVP_KILL)
+			print("[CombatServer] Awarded " .. MASTERY_XP_PVP_KILL .. " mastery XP to " .. killer.Name .. " for PvP kill style=" .. data.EquippedStyle)
+		end
 
-		PlayerDataModule.addMasteryXP(killer, data.EquippedStyle, MASTERY_XP_PVP_KILL)
-		print("[CombatServer] Awarded " .. MASTERY_XP_PVP_KILL .. " mastery XP to " .. killer.Name .. " for PvP kill style=" .. data.EquippedStyle)
+		local transfer = PlayerDataModule.applyPvpBountyTransfer(killer, player)
+		if transfer then
+			CombatMessageRemote:FireClient(killer, {
+				Type = "DefeatedPlayer",
+				Text = "You defeated " .. player.DisplayName .. " (+" .. transfer.KillerGain .. " bounty)",
+			})
+			CombatMessageRemote:FireClient(player, {
+				Type = "KilledByPlayer",
+				Text = "Defeated by " .. killer.DisplayName .. " (-" .. transfer.VictimLoss .. " bounty)",
+			})
+			print(
+				"[CombatServer] PvP defeat: "
+					.. killer.Name
+					.. " defeated "
+					.. player.Name
+					.. " (bounty +"
+					.. tostring(transfer.KillerGain)
+					.. "/-"
+					.. tostring(transfer.VictimLoss)
+					.. ")"
+			)
+		end
 	end)
 end
 

@@ -1,7 +1,7 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local _RunService = game:GetService("RunService")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 
@@ -142,6 +142,9 @@ local function recoverDashPosture(humanoid, hrp)
 	humanoid.AutoRotate = true
 	if hrp then
 		hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+		-- Zero horizontal velocity so collision bounce-back can't send the character flying
+		local vel = hrp.AssemblyLinearVelocity
+		hrp.AssemblyLinearVelocity = Vector3.new(0, math.min(vel.Y, 0), 0)
 	end
 	humanoid:ChangeState(Enum.HumanoidStateType.Running)
 end
@@ -309,13 +312,21 @@ local function performGroundLunge()
 	end
 
 	local force = Instance.new("LinearVelocity")
-	force.MaxForce = math.huge
+	force.MaxForce = 22000
 	force.VectorVelocity = dir * LUNGE_POWER
 	force.Attachment0 = attachment
 	force.RelativeTo = Enum.ActuatorRelativeTo.World
 	force.Parent = hrp
 
+	-- Suppress angular forces from enemy collisions so the character never tips over
+	local stabilizeConn = RunService.Heartbeat:Connect(function()
+		if hrp and hrp.Parent then
+			hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+		end
+	end)
+
 	task.delay(DASH_FORCE_DURATION, function()
+		stabilizeConn:Disconnect()
 		if force and force.Parent then
 			force:Destroy()
 		end
@@ -360,13 +371,20 @@ local function performAerialDash()
 	end
 
 	local force = Instance.new("LinearVelocity")
-	force.MaxForce = math.huge
+	force.MaxForce = 22000
 	force.VectorVelocity = dir * aerialPower
 	force.Attachment0 = attachment
 	force.RelativeTo = Enum.ActuatorRelativeTo.World
 	force.Parent = hrp
 
+	local stabilizeConn = RunService.Heartbeat:Connect(function()
+		if hrp and hrp.Parent then
+			hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+		end
+	end)
+
 	task.delay(DASH_FORCE_DURATION, function()
+		stabilizeConn:Disconnect()
 		if force and force.Parent then
 			force:Destroy()
 		end

@@ -144,9 +144,15 @@ end
 
 local TitleModule = loadModule("src/ReplicatedStorage/Modules/TitleModule.luau")
 local ItemsModule = loadModule("src/ReplicatedStorage/Modules/ItemsModule.luau")
+local StatConfig = loadModule("src/ReplicatedStorage/Modules/StatConfig.luau")
+local MasteryModule = loadModule("src/ReplicatedStorage/Modules/MasteryModule.luau")
+local RaceModule = loadModule("src/ReplicatedStorage/Modules/RaceModule.luau")
 local SkillSystemModule = loadModule("src/ReplicatedStorage/Modules/SkillSystemModule.luau")
 local QuestDataModule = loadModule("src/ReplicatedStorage/Modules/QuestDataModule.luau")
 local MusicModule = loadModule("src/ReplicatedStorage/Modules/MusicModule.luau")
+local BountyModule = loadModule("src/ReplicatedStorage/Modules/BountyModule.luau")
+local TeamModule = loadModule("src/ReplicatedStorage/Modules/TeamModule.luau")
+local CombatModule = loadModule("src/ReplicatedStorage/Modules/CombatModule.luau")
 
 test("default Demon Slayer title maps to a playable Slayer identity", function()
 	local title = TitleModule.getTitle("DemonSlayer")
@@ -174,6 +180,20 @@ test("title buff math respects base value, cap, and rebirth multiplier", functio
 	expectNear(TitleModule.computeBuff("DemonSlayer", 1, 0), 0.05, 0.000001, "level 1 title buff")
 	expectNear(TitleModule.computeBuff("DemonSlayer", 50, 0), 0.30, 0.000001, "capped title buff")
 	expectNear(TitleModule.xpMultiplier(2), 2, 0.000001, "rebirth XP multiplier")
+end)
+
+test("title rebirth tiers increase level requirements and buff ceilings", function()
+	expectEqual(TitleModule.getMaxLevel("DemonSlayer", 0), 50, "tier 1 max level")
+	expectEqual(TitleModule.getMaxLevel("DemonSlayer", 1), 75, "tier 2 max level")
+	expectEqual(TitleModule.getMaxLevel("DemonSlayer", 2), 100, "tier 3 max level")
+	expectTruthy(
+		TitleModule.computeBuff("DemonSlayer", 75, 1) > TitleModule.computeBuff("DemonSlayer", 50, 0),
+		"tier 2 title ceiling exceeds tier 1"
+	)
+	expectTruthy(
+		TitleModule.xpForLevel("DemonSlayer", 1, 1) > TitleModule.xpForLevel("DemonSlayer", 1, 0),
+		"rebirth tier XP is harder"
+	)
 end)
 
 test("inventory helpers find starting scrolls and styles", function()
@@ -271,6 +291,63 @@ test("skill icons are style-specific instead of slot-only", function()
 	expectEqual(temariQ.Icon ~= waterQ.Icon, true, "Temari Q icon differs from Water Q icon")
 end)
 
+test("every Water Breathing form has a distinct asset-driven VFX profile", function()
+	local seenProfiles = {}
+	for _, skill in ipairs(SkillSystemModule.getSkillsForStyle("WaterBreathing")) do
+		expectTruthy(type(skill.VFXProfile) == "string" and skill.VFXProfile ~= "", skill.Id .. " VFX profile")
+		expectTruthy(not seenProfiles[skill.VFXProfile], skill.Id .. " VFX profile is unique")
+		expectTruthy(type(skill.VFXAssets) == "table" and #skill.VFXAssets >= 4, skill.Id .. " authored asset coverage")
+		seenProfiles[skill.VFXProfile] = true
+	end
+	expectEqual(SkillSystemModule.getSkill("WaterfallBasin").VFXProfile, "StrikingTide", "fourth form presentation")
+	expectEqual(
+		SkillSystemModule.getSkill("WaterDragon").VFXAssets[1],
+		"Constant flux's dragon",
+		"water dragon uses imported dragon model"
+	)
+end)
+
+test("mastery rebirth retains full ability access", function()
+	local canUse, reason = SkillSystemModule.canUseSkill({}, "ConstantFlux", {
+		Level = 1,
+		Stamina = 100,
+		EquippedStyle = "WaterBreathing",
+		Mastery = {
+			WaterBreathing = { Level = 1, RebirthCount = 1 },
+		},
+	})
+	expectEqual(canUse, true, "tier 2 mastery retains ultimate access")
+	expectEqual(reason, nil, "tier 2 access rejection")
+end)
+
+test("Flame third form uses a distinct meteor-inspired icon", function()
+	local flameSecond = SkillSystemModule.getSkill("FlameSecond")
+	local flameThird = SkillSystemModule.getSkill("FlameThird")
+	expectTruthy(flameSecond, "FlameSecond registered")
+	expectTruthy(flameThird, "FlameThird registered")
+	expectTruthy(flameThird.Icon ~= nil and flameThird.Icon ~= "", "FlameThird icon")
+	expectEqual(flameThird.Icon ~= flameSecond.Icon, true, "FlameThird icon differs from FlameSecond")
+end)
+
+test("all skills expose style identity and ability icons for VFX/SFX", function()
+	local styles = { "WaterBreathing", "FlameBreathing", "DemonArts", "TemariDemonArts" }
+	for _, styleName in styles do
+		local skills = SkillSystemModule.getSkillsForStyle(styleName)
+		expectTruthy(#skills >= 1, styleName .. " should expose skills")
+		for _, skill in skills do
+			expectEqual(skill.Style, styleName, skill.Id .. " style")
+			expectTruthy(type(skill.Icon) == "string" and #skill.Icon > 0, skill.Id .. " icon")
+			expectTruthy(type(skill.Name) == "string" and #skill.Name > 0, skill.Id .. " name")
+		end
+	end
+end)
+
+test("parry tuning drains attacker stamina and extends stun on break", function()
+	expectTruthy(CombatModule.PARRY_STAMINA_DAMAGE > 0, "parry stamina punish")
+	expectTruthy(CombatModule.PARRY_BREAK_STUN_DURATION > CombatModule.PARRY_STAGGER_DURATION, "guard break stun duration")
+	expectTruthy(CombatModule.PARRY_WINDOW >= 0.2 and CombatModule.PARRY_WINDOW <= 0.35, "parry window should stay readable")
+end)
+
 -- ==================== Temari Demon Arts ====================
 test("TemariDemonArts has exactly 6 skills covering Q/E/R/F/Y/V slots", function()
 	local skills = SkillSystemModule.getSkillsForStyle("TemariDemonArts")
@@ -356,8 +433,143 @@ test("quest routing keeps dummies on Urokodaki and demons on Corps Officer", fun
 		expectEqual(quest.objectives[1].enemyType, "TrainingDummy", quest.id .. " is a dummy quest")
 	end
 	for _, quest in ipairs(officerQuests) do
-		expectEqual(quest.objectives[1].enemyType, "ForestDemon", quest.id .. " is a demon quest")
+		local enemyType = quest.objectives[1].enemyType
+		expectTruthy(enemyType == "ForestDemon" or enemyType == "DemonBoss", quest.id .. " is a demon quest")
 	end
+end)
+
+test("Demon Boss quest is routed to the Corps Officer", function()
+	local quest = QuestDataModule.getQuest("demon_boss_01")
+	expectTruthy(quest, "Demon Boss quest exists")
+	expectEqual(quest.npcId, "QuestNPC_Officer", "Demon Boss quest NPC")
+	expectEqual(quest.objectives[1].enemyType, "DemonBoss", "Demon Boss objective type")
+	expectEqual(quest.repeatable, true, "Demon Boss quest repeatable")
+end)
+
+test("every quest awards normal, mastery, and title XP", function()
+	for _, quest in ipairs(QuestDataModule.Quests) do
+		local rewards = QuestDataModule.getProgressionRewards(quest)
+		expectTruthy(rewards.XP > 0, quest.id .. " normal XP")
+		expectTruthy(rewards.MasteryXP > 0, quest.id .. " mastery XP")
+		expectTruthy(rewards.TitleXP > 0, quest.id .. " title XP")
+	end
+end)
+
+-- ==================== BountyModule ====================
+test("PvP bounty transfer grants killer bounty and clamps defeated bounty", function()
+	local transfer = BountyModule.calculatePvpTransfer(100, 80)
+	expectEqual(transfer.KillerGain, 35, "killer gain includes base plus steal")
+	expectEqual(transfer.VictimLoss, 10, "victim loses at least minimum bounty")
+	expectEqual(transfer.KillerBounty, 135, "killer bounty updated")
+	expectEqual(transfer.VictimBounty, 70, "victim bounty updated")
+end)
+
+test("PvP bounty damage multiplier is capped and only above 1", function()
+	expectNear(BountyModule.getPvPDamageMultiplier(0), 1, 0.000001, "zero bounty multiplier")
+	expectTruthy(BountyModule.getPvPDamageMultiplier(1000) > 1, "positive bounty multiplier")
+	expectNear(BountyModule.getPvPDamageMultiplier(999999), 1.25, 0.000001, "bounty multiplier cap")
+end)
+
+-- ==================== TeamModule ====================
+test("team module enforces max team size", function()
+	expectEqual(TeamModule.canAddMember(4), true, "team can add fifth member")
+	expectEqual(TeamModule.canAddMember(5), false, "team rejects sixth member")
+	expectEqual(TeamModule.MAX_MEMBERS, 5, "team max members")
+end)
+
+test("team module share radius helper gates shared rewards", function()
+	expectEqual(TeamModule.isInShareRange(TeamModule.SHARE_RADIUS, TeamModule.SHARE_RADIUS), true, "edge of share radius included")
+	expectEqual(TeamModule.isInShareRange(TeamModule.SHARE_RADIUS + 1, TeamModule.SHARE_RADIUS), false, "outside share radius excluded")
+end)
+
+test("team policy blocks friendly fire and allows non-team PvP", function()
+	expectEqual(TeamModule.canDamagePlayer(true), false, "teammate damage blocked")
+	expectEqual(TeamModule.canDamagePlayer(false), true, "non-team damage allowed")
+end)
+
+test("combat target policy consults live team membership", function()
+	local attacker = { Name = "Attacker" }
+	local teammate = { Name = "Teammate" }
+	local opponent = { Name = "Opponent" }
+	local teammateModel = {}
+	local opponentModel = {}
+	local playersService = game:GetService("Players")
+	playersService.GetPlayerFromCharacter = function(_self, model)
+		return model == teammateModel and teammate or opponent
+	end
+	shared = { -- selene: allow(incorrect_standard_library_use, global_usage)
+		TeamService = {
+			areTeammates = function(a, b)
+				return a == attacker and b == teammate
+			end,
+		},
+	}
+
+	expectEqual(CombatModule.canPlayerDamageTarget(attacker, teammateModel), false, "teammate target rejected")
+	expectEqual(CombatModule.canPlayerDamageTarget(attacker, opponentModel), true, "opponent target accepted")
+end)
+
+test("kill rewards use last hitter plus nearby team, not unrelated contributors", function()
+	local killer = { Name = "Killer", Parent = true }
+	local teammate = { Name = "Teammate", Parent = true }
+	local contributor = { Name = "Contributor", Parent = true }
+	local target = {}
+	shared.TeamService.getNearbyTeamMembers = function(player) -- selene: allow(global_usage)
+		return player == killer and { teammate } or {}
+	end
+	CombatModule.recordDamageContribution(target, contributor, 999)
+	local rewards = CombatModule.getRewardPlayers(target, killer, 160)
+	expectEqual(#rewards, 2, "reward recipient count")
+	expectEqual(rewards[1], killer, "last hitter receives credit")
+	expectEqual(rewards[2], teammate, "nearby teammate receives shared credit")
+	CombatModule.clearDamageContributors(target)
+end)
+
+-- ==================== StatConfig ====================
+test("one Damage stat scales every combat style", function()
+	expectEqual(#StatConfig.STAT_KEYS, 5, "consolidated stat count")
+	expectEqual(StatConfig.STAT_KEYS[1], "Damage", "first stat is Damage")
+	expectEqual(StatConfig.VALID_STATS.Damage, true, "Damage allocation is valid")
+	expectNear(StatConfig.getDamageMultiplier(10), 1.3, 0.000001, "Damage multiplier")
+end)
+
+test("legacy breath and demon damage points migrate into Damage", function()
+	expectEqual(StatConfig.LEGACY_KEY_MAP.BreathDamage, "Damage", "breath damage migration")
+	expectEqual(StatConfig.LEGACY_KEY_MAP.DemonArtDamage, "Damage", "demon art damage migration")
+end)
+
+-- ==================== MasteryModule ====================
+test("mastery tiers grow longer and tier floors exceed prior ceilings", function()
+	expectEqual(MasteryModule.getMaxLevel(0), 50, "tier 1 mastery cap")
+	expectEqual(MasteryModule.getMaxLevel(1), 75, "tier 2 mastery cap")
+	local tierOneRoof = MasteryModule.computeDamageMultiplier(MasteryModule.getMaxLevel(0), 0)
+	local tierTwoFloor = MasteryModule.computeDamageMultiplier(1, 1)
+	expectTruthy(tierTwoFloor > tierOneRoof, "tier 2 floor exceeds tier 1 roof")
+	expectEqual(MasteryModule.getEffectiveUnlockLevel(1, 1), 15, "rebirth keeps forms unlocked")
+end)
+
+-- ==================== RaceModule ====================
+test("race rolls honor configured probability boundaries", function()
+	expectEqual(RaceModule.roll(0).Id, "Human", "common roll")
+	expectEqual(RaceModule.roll(0.75).Id, "DemonKing", "mythic boundary")
+	expectEqual(RaceModule.roll(0.95).Id, "Sun", "divine boundary")
+end)
+
+test("race buffs scale all derived stats", function()
+	local base = {
+		maxHP = 150,
+		maxStamina = 100,
+		walkSpeed = 24,
+		damageMultiplier = 1.2,
+		defenseMultiplier = 0.1,
+	}
+	local sun = RaceModule.applyToStats(base, "Sun")
+	expectNear(sun.maxHP, 300, 0.000001, "Sun health")
+	expectNear(sun.maxStamina, 200, 0.000001, "Sun stamina")
+	expectNear(sun.walkSpeed, 48, 0.000001, "Sun speed")
+	expectNear(sun.damageMultiplier, 2.4, 0.000001, "Sun damage")
+	local demonKing = RaceModule.getRace("DemonKing")
+	expectNear(demonKing.HealthRegenPercent, 0.20, 0.000001, "Demon King regeneration")
 end)
 
 -- ==================== MusicModule ====================
