@@ -29,6 +29,10 @@ local function ensureDir(path: string)
 	end
 end
 
+-- Tracks how many times each base name has been used per output directory
+-- so duplicate-named siblings get unique filenames: Foo.rbxm, Foo_2.rbxm, Foo_3.rbxm …
+local usedNames: { [string]: { [string]: number } } = {}
+
 local function getPath(root: Instance, path: { string }): Instance?
 	local current: Instance = root
 
@@ -63,7 +67,17 @@ local function exportInstance(instance: Instance, outDir: string): boolean
 		return false
 	end
 
-	local outPath = outDir .. "/" .. sanitize(instance.Name) .. ".rbxm"
+	local baseName = sanitize(instance.Name)
+
+	if not usedNames[outDir] then
+		usedNames[outDir] = {}
+	end
+
+	local seen = usedNames[outDir][baseName] or 0
+	usedNames[outDir][baseName] = seen + 1
+
+	local fileName = if seen == 0 then baseName else baseName .. "_" .. (seen + 1)
+	local outPath = outDir .. "/" .. fileName .. ".rbxm"
 	local bytes = roblox.serializeModel({ instance })
 	fs.writeFile(outPath, bytes)
 	print(("[+] %s (%s) -> %s"):format(instance:GetFullName(), instance.ClassName, outPath))
