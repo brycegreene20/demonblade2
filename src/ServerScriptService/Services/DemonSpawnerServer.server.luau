@@ -590,9 +590,7 @@ local function spawnDemon(spawnData)
 		CollectionService:RemoveTag(demon, "Demon")
 
 		for _, descendant in demon:GetDescendants() do
-			if descendant:IsA("BillboardGui") then
-				descendant.Enabled = false
-			elseif descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") or descendant:IsA("Beam") then
+			if descendant:IsA("BillboardGui") or descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") or descendant:IsA("Beam") then
 				descendant.Enabled = false
 			end
 			local part = descendant
