@@ -31,6 +31,18 @@ local playerBlocking = {}
 local blockDrainThreads = {}
 local guardBreakCooldowns = {}
 
+-- selene: allow(global_usage)
+local function grantFocusXP(player: Player, amount: number)
+	-- selene: allow(global_usage)
+	if shared.TotalFocusServer then
+		shared.TotalFocusServer.grantXP(player, amount)
+	end
+	-- selene: allow(global_usage)
+	if shared.SelflessStateServer then
+		shared.SelflessStateServer.grantXP(player, amount)
+	end
+end
+
 local function getComboState(player)
 	if not playerCombos[player] then
 		playerCombos[player] = {
@@ -194,6 +206,13 @@ LightAttackRemote.OnServerEvent:Connect(function(player)
 
 	local hitCharacters = CombatModule.processLightAttack(player, combo.index)
 
+	for _, hitChar in hitCharacters do
+		local victim = Players:GetPlayerFromCharacter(hitChar)
+		if victim then
+			grantFocusXP(victim, 1)
+		end
+	end
+
 	LightAttackRemote:FireClient(player, combo.index, #hitCharacters > 0)
 
 	for _, other in Players:GetPlayers() do
@@ -218,6 +237,8 @@ local function onCharacterAdded(player, character)
 			PlayerDataModule.addMasteryXP(killer, data.EquippedStyle, MASTERY_XP_PVP_KILL)
 			print("[CombatServer] Awarded " .. MASTERY_XP_PVP_KILL .. " mastery XP to " .. killer.Name .. " for PvP kill style=" .. data.EquippedStyle)
 		end
+		grantFocusXP(killer, 1)
+		grantFocusXP(player, 1)
 
 		local transfer = PlayerDataModule.applyPvpBountyTransfer(killer, player)
 		if transfer then

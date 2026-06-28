@@ -19,13 +19,13 @@ local _IFRAME_DURATION = 0.2
 local LUNGE_VFX_DURATION = 0.35
 local DASH_FORCE_DURATION = 0.16
 local USE_LUNGE_ANIMATION = false
-local DOUBLE_JUMP_MULT = 0.95
+local MAX_AIR_JUMPS = 4
+local MULTI_JUMP_STAMINA_COST = 15
 local MAX_DOWNWARD_ANGLE = math.rad(60)
 
 local _lastLungeTime = 0
 local isLunging = false
-local doubleJumpAvailable = false
-local hasDoubleJumped = false
+local airJumpsUsed = 0
 local isAirborne = false
 local currentStamina = 100
 local _maxStamina = 100
@@ -396,9 +396,10 @@ local function performAerialDash()
 	end)
 end
 
-local function performDoubleJump()
-	if not doubleJumpAvailable then return end
-	if hasDoubleJumped then return end
+local function performAirJump()
+	if not isAirborne then return end
+	if airJumpsUsed >= MAX_AIR_JUMPS then return end
+	if currentStamina < MULTI_JUMP_STAMINA_COST then return end
 
 	local humanoid = getHumanoid()
 	if not humanoid or humanoid.Health <= 0 then return end
@@ -407,10 +408,9 @@ local function performDoubleJump()
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
 
-	hasDoubleJumped = true
-	doubleJumpAvailable = false
+	airJumpsUsed += 1
 
-	local jumpImpulse = humanoid.JumpPower * DOUBLE_JUMP_MULT
+	local jumpImpulse = humanoid.JumpPower
 	hrp.AssemblyLinearVelocity = Vector3.new(
 		hrp.AssemblyLinearVelocity.X,
 		jumpImpulse,
@@ -436,8 +436,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 UserInputService.JumpRequest:Connect(function()
-	if isAirborne and not hasDoubleJumped then
-		performDoubleJump()
+	if isAirborne then
+		performAirJump()
 	end
 end)
 
@@ -452,8 +452,7 @@ local function setupCharacter(character)
 	isLunging = false
 	_lastLungeTime = 0
 	lungeCooldownExpiry = 0
-	doubleJumpAvailable = false
-	hasDoubleJumped = false
+	airJumpsUsed = 0
 	isAirborne = false
 
 	cachedLungeTrack = nil
@@ -474,18 +473,10 @@ local function setupCharacter(character)
 
 	humanoid.StateChanged:Connect(function(_oldState, newState)
 		if newState == Enum.HumanoidStateType.Freefall or newState == Enum.HumanoidStateType.Jumping then
-			if not isAirborne then
-				isAirborne = true
-				task.delay(0.1, function()
-					if isAirborne then
-						doubleJumpAvailable = true
-					end
-				end)
-			end
+			isAirborne = true
 		elseif newState == Enum.HumanoidStateType.Landed or newState == Enum.HumanoidStateType.Running then
 			isAirborne = false
-			doubleJumpAvailable = false
-			hasDoubleJumped = false
+			airJumpsUsed = 0
 		end
 	end)
 
