@@ -1,0 +1,6 @@
+{
+  "name": "DemonBlade2AlignSnap",
+  "tree": {
+    "$path": "src/Plugin/AlignSnap.server.luau"
+  }
+}
