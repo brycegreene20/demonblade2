@@ -1,0 +1,6 @@
+{
+  "name": "DemonBlade2ReplaceObjects",
+  "tree": {
+    "$path": "src/Plugin/ReplaceObjects.server.luau"
+  }
+}
