@@ -11,13 +11,14 @@ local DemonTemplate = Assets:WaitForChild("ForestDemon")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
 local CombatModule = require(Modules:WaitForChild("CombatModule"))
+local WorldSpawnConfigModule = require(Modules:WaitForChild("WorldSpawnConfigModule"))
 
 local MASTERY_KILL_REWARDS = {
 	[1] = 3, [2] = 5, [3] = 8, [4] = 12, [5] = 12,
 	[6] = 20, [7] = 20, [8] = 20, [9] = 20, [10] = 20,
 }
 
-local AGGRO_RADIUS = 55
+local AGGRO_RADIUS = 85
 local ATTACK_RADIUS = 8
 local ATTACK_COOLDOWN = 1.5
 local ATTACK_WINDUP = CombatModule.NPC_ATTACK_WINDUP
@@ -65,21 +66,7 @@ local BOSS_STATS = {
 	xp = 600,
 }
 
-local RAW_SPAWNS = {
-	{ x = 42,  z = 36,  level = 1 },
-	{ x = 52,  z = 36,  level = 1 },
-	{ x = 62,  z = 36,  level = 1 },
-	{ x = 72,  z = 36,  level = 1 },
-	{ x = 60,  z = -60,  level = 2 },
-	{ x = -50, z = -80,  level = 2 },
-	{ x = 80,  z = -100, level = 3 },
-	{ x = -70, z = -30,  level = 3 },
-	{ x = 100, z = -40,  level = 4 },
-	{ x = -90, z = -110, level = 5 },
-	{ x = 50,  z = -130, level = 6 },
-	{ x = -40, z = -150, level = 7 },
-	{ x = 128, z = 78,  level = BOSS_STATS.level, boss = true },
-}
+local RAW_SPAWNS = WorldSpawnConfigModule.getDemonSpawns()
 
 local SPAWN_POSITIONS = {}
 for _, raw in RAW_SPAWNS do
@@ -87,6 +74,9 @@ for _, raw in RAW_SPAWNS do
 		pos = CFrame.new(raw.x, FALLBACK_Y + DEMON_HALF_HEIGHT, raw.z),
 		level = raw.level,
 		boss = raw.boss == true,
+		x = raw.x,
+		z = raw.z,
+		zone = raw.zone,
 	})
 end
 
@@ -102,6 +92,140 @@ demonsFolder.Name = "ForestDemons"
 demonsFolder.Parent = workspace
 
 local activeDemons = {}
+
+local SPAWN_SEARCH_OFFSETS = {
+	Vector2.new(0, 0),
+	Vector2.new(8, 0),
+	Vector2.new(-8, 0),
+	Vector2.new(0, 8),
+	Vector2.new(0, -8),
+	Vector2.new(10, 10),
+	Vector2.new(-10, 10),
+	Vector2.new(10, -10),
+	Vector2.new(-10, -10),
+}
+
+local function getGroundResult(x, z)
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	local excluded = { demonsFolder }
+	local dummiesFolder = workspace:FindFirstChild("TrainingDummies")
+	if dummiesFolder then
+		table.insert(excluded, dummiesFolder)
+	end
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			table.insert(excluded, player.Character)
+		end
+	end
+	raycastParams.FilterDescendantsInstances = excluded
+	raycastParams.IgnoreWater = true
+	raycastParams.RespectCanCollide = true
+	return workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -650, 0), raycastParams)
+end
+
+local function hasSpawnClearance(cframe)
+	local overlapParams = OverlapParams.new()
+	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+	local excluded = { demonsFolder }
+	local dummiesFolder = workspace:FindFirstChild("TrainingDummies")
+	if dummiesFolder then
+		table.insert(excluded, dummiesFolder)
+	end
+	overlapParams.FilterDescendantsInstances = excluded
+
+	local parts = workspace:GetPartBoundsInBox(
+		cframe * CFrame.new(0, 0.5, 0),
+		Vector3.new(6, 5, 6),
+		overlapParams
+	)
+	for _, part in parts do
+		if part.CanCollide then
+			return false
+		end
+	end
+	return true
+end
+
+local function resolveSpawnCFrame(spawnData)
+	for _, offset in SPAWN_SEARCH_OFFSETS do
+		local x = spawnData.x + offset.X
+		local z = spawnData.z + offset.Y
+		local result = getGroundResult(x, z)
+		if result and result.Normal.Y >= 0.65 then
+			local cframe = CFrame.new(result.Position + Vector3.new(0, DEMON_HALF_HEIGHT, 0))
+			if hasSpawnClearance(cframe) then
+				return cframe
+			end
+		end
+	end
+
+	warn(("[DemonSpawner] No clear ground found for %s; using configured fallback"):format(
+		spawnData.zone or "unknown zone"
+	))
+	return spawnData.pos
+end
+
+local function getMovementRaycastParams()
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local excluded = { demonsFolder }
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			table.insert(excluded, player.Character)
+		end
+	end
+	params.FilterDescendantsInstances = excluded
+	params.IgnoreWater = true
+	params.RespectCanCollide = true
+	return params
+end
+
+local function getGroundedMovementPosition(position)
+	local result = workspace:Raycast(
+		position + Vector3.new(0, 18, 0),
+		Vector3.new(0, -45, 0),
+		getMovementRaycastParams()
+	)
+	if not result or result.Normal.Y < 0.65 then
+		return nil
+	end
+	return Vector3.new(position.X, result.Position.Y + DEMON_HALF_HEIGHT, position.Z)
+end
+
+local function isMovementPathClear(currentPosition, desiredPosition)
+	local offset = desiredPosition - currentPosition
+	if offset.Magnitude < 0.05 then return true end
+	return workspace:Raycast(currentPosition, offset, getMovementRaycastParams()) == nil
+end
+
+local function _getNavigablePosition(currentPosition, desiredPosition)
+	local flatOffset = Vector3.new(
+		desiredPosition.X - currentPosition.X,
+		0,
+		desiredPosition.Z - currentPosition.Z
+	)
+	if flatOffset.Magnitude < 0.05 then
+		return currentPosition
+	end
+
+	local stepDistance = flatOffset.Magnitude
+	local forward = flatOffset.Unit
+	local right = Vector3.new(-forward.Z, 0, forward.X)
+	local candidates = {
+		currentPosition + forward * stepDistance,
+		currentPosition + (forward + right).Unit * stepDistance,
+		currentPosition + (forward - right).Unit * stepDistance,
+	}
+
+	for _, candidate in candidates do
+		local grounded = getGroundedMovementPosition(candidate)
+		if grounded and isMovementPathClear(currentPosition, grounded) then
+			return grounded
+		end
+	end
+	return currentPosition
+end
 
 local function getStatsForLevel(level)
 	level = math.clamp(level, 1, 10)
@@ -122,7 +246,7 @@ local function createHPBar(parent, name, level)
 	billboard.Size = UDim2.fromScale(BAR_WIDTH, BAR_HEIGHT)
 	billboard.StudsOffset = Vector3.new(0, 3, 0)
 	billboard.AlwaysOnTop = true
-	billboard.MaxDistance = 60
+	billboard.MaxDistance = 120
 	billboard.LightInfluence = 0
 	billboard.Parent = parent
 
@@ -438,7 +562,7 @@ local function findPlayerInRadius(position, radius)
 end
 
 local function spawnDemon(spawnData)
-	local spawnCFrame = spawnData.pos
+	local spawnCFrame = resolveSpawnCFrame(spawnData)
 	local level = spawnData.level
 	local isBoss = spawnData.boss == true
 	local stats = isBoss and BOSS_STATS or getStatsForLevel(level)
@@ -511,6 +635,7 @@ local function spawnDemon(spawnData)
 	demon:SetAttribute("Level", level)
 	demon:SetAttribute("Damage", stats.damage)
 	demon:SetAttribute("EnemyType", enemyType)
+	demon:SetAttribute("SpawnZone", spawnData.zone or "Snowfield")
 	demon:SetAttribute("XPReward", stats.xp)
 	demon:SetAttribute("IsBoss", isBoss)
 
@@ -677,9 +802,23 @@ local function spawnDemon(spawnData)
 		end
 
 		local lastAttackerId = demon:GetAttribute("LastAttacker")
+		for i, state in activeDemons do
+			if state == demonState then
+				table.remove(activeDemons, i)
+				break
+			end
+		end
+		-- Cleanup and respawn scheduling happen before optional reward systems.
+		-- A progression/quest failure must never strand a defeated rig in Workspace.
+		demon:Destroy()
+		task.delay(RESPAWN_TIME, function()
+			spawnDemon(spawnData)
+		end)
+
 		if lastAttackerId then
 			local attacker = Players:GetPlayerByUserId(lastAttackerId)
 			if attacker then
+				CombatModule.grantStateProgressionEvent(attacker, "Kill")
 				local rewardPlayers = CombatModule.getRewardPlayers(demon, attacker, 160)
 				for _, rewardedPlayer in rewardPlayers do
 					PlayerDataModule.addXP(rewardedPlayer, stats.xp)
@@ -707,36 +846,62 @@ local function spawnDemon(spawnData)
 			end
 		end
 		CombatModule.clearDamageContributors(demon)
-
-		for _, part in demon:GetDescendants() do
-			if part:IsA("BasePart") and part ~= hrp and part ~= streamAnchor then
-				TweenService:Create(part, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-					Transparency = 1,
-				}):Play()
-			end
-		end
-
-		task.delay(0.65, function()
-			if demon and demon.Parent then
-				demon:Destroy()
-			end
-		end)
-
-		task.delay(RESPAWN_TIME, function()
-			for i, ds in activeDemons do
-				if ds == demonState then
-					table.remove(activeDemons, i)
-					break
-				end
-			end
-			spawnDemon(spawnData)
-		end)
 	end)
 
 	table.insert(activeDemons, demonState)
 	debugSpawnLog("Spawned " .. displayName .. " Lv." .. level .. " at " .. tostring(spawnCFrame.Position))
 	return demonState
 end
+
+local function replaceAuthoredDemonModels()
+	local candidates = {}
+	for _, model in workspace:GetDescendants() do
+		if not model:IsA("Model") or model:IsDescendantOf(demonsFolder) then
+			continue
+		end
+		if Players:GetPlayerFromCharacter(model) then
+			continue
+		end
+
+		local lowerName = string.lower(model.Name)
+		if not string.find(lowerName, "demon", 1, true) then
+			continue
+		end
+
+		local humanoid = model:FindFirstChildOfClass("Humanoid")
+		local hasRigParts = model:FindFirstChild("Head") and model:FindFirstChild("Torso")
+		local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model.PrimaryPart
+		if (humanoid or hasRigParts) and root then
+			table.insert(candidates, model)
+		end
+	end
+
+	for _, model in candidates do
+		if not model.Parent then continue end
+		local pivot = model:GetPivot()
+		local lowerName = string.lower(model.Name)
+		local isBoss = model:GetAttribute("IsBoss") == true
+			or string.find(lowerName, "boss", 1, true) ~= nil
+		local parsedLevel = tonumber(string.match(model.Name, "[Ll][Vv]%.?%s*(%d+)"))
+		local level = tonumber(model:GetAttribute("Level")) or parsedLevel or (isBoss and BOSS_STATS.level or 1)
+
+		model:Destroy()
+		spawnDemon({
+			pos = pivot,
+			x = pivot.Position.X,
+			z = pivot.Position.Z,
+			level = level,
+			boss = isBoss,
+			zone = "AuthoredSnowfield",
+		})
+	end
+
+	if #candidates > 0 then
+		print(("[DemonSpawner] Replaced %d authored demon rig(s) with combat-enabled AI"):format(#candidates))
+	end
+end
+
+replaceAuthoredDemonModels()
 
 for _, spawnData in SPAWN_POSITIONS do
 	spawnDemon(spawnData)

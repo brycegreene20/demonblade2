@@ -46,16 +46,43 @@ end
 
 -- Called by CombatServer when the player kills or is hit while Focus is active
 local function grantXP(player: Player, amount: number)
-	if not activePlayers[player] then return end
+	if not activePlayers[player] then return false, nil end
 	local data = getData(player)
-	if not data then return end
-	local xp = (data.TotalFocusXP or 0) + amount
-	PlayerDataModule.setField(player, "TotalFocusXP", xp)
+	if not data then return false, nil end
+	amount = math.max(0, amount)
+	if amount <= 0 then return false, nil end
+	local oldXP = data.TotalFocusXP or 0
+	local oldTier = TotalFocusModule.getTierIndex(oldXP)
+	local xp = oldXP + amount
+	if not PlayerDataModule.setProgressionField(player, "TotalFocusXP", xp) then
+		warn("[TotalFocusServer] Could not persist XP for " .. player.Name)
+		return false, nil
+	end
 	fireUpdate(player)
+	local newTier = TotalFocusModule.getTierIndex(xp)
+	if newTier > oldTier then
+		print(("[TotalFocusServer] %s advanced to %s at %d XP"):format(
+			player.Name,
+			TotalFocusModule.TIERS[newTier].name,
+			xp
+		))
+	end
+	return true, xp
+end
+
+local function grantEventXP(player: Player, eventName: string)
+	local amount = TotalFocusModule.getXPForEvent(eventName)
+	local granted, xp = grantXP(player, amount)
+	if granted and xp and eventName == "Kill" then
+		print(("[TotalFocusServer] %s gained %d kill XP (%d total)"):format(player.Name, amount, xp))
+	end
 end
 
 -- selene: allow(global_usage)
-shared.TotalFocusServer = { grantXP = grantXP }
+shared.TotalFocusServer = {
+	grantXP = grantXP,
+	grantEventXP = grantEventXP,
+}
 
 local function deactivate(player: Player)
 	if not activePlayers[player] then return end
@@ -96,8 +123,12 @@ TotalFocusRebirth.OnServerEvent:Connect(function(player: Player)
 	local xp = data.TotalFocusXP or 0
 	local rebirths = data.TotalFocusRebirths or 0
 	if not TotalFocusModule.canRebirth(xp, rebirths) then return end
-	PlayerDataModule.setField(player, "TotalFocusXP", 0)
-	PlayerDataModule.setField(player, "TotalFocusRebirths", rebirths + 1)
+	if not PlayerDataModule.setProgressionField(player, "TotalFocusXP", 0)
+		or not PlayerDataModule.setProgressionField(player, "TotalFocusRebirths", rebirths + 1)
+	then
+		warn("[TotalFocusServer] Could not persist rebirth for " .. player.Name)
+		return
+	end
 	fireUpdate(player)
 	print("[TotalFocusServer]", player.Name, "rebirths into", TotalFocusModule.getConstantLabel(rebirths + 1))
 end)

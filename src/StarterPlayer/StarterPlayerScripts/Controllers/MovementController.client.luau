@@ -10,6 +10,7 @@ local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local LungeRemote = Remotes:WaitForChild("Lunge")
 local StaminaChanged = Remotes:WaitForChild("StaminaChanged")
 local HPChanged = Remotes:WaitForChild("HPChanged")
+local MovementPhysicsModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("MovementPhysicsModule"))
 
 local LUNGE_COOLDOWN = 0.9
 local AERIAL_COOLDOWN = 1.1
@@ -21,6 +22,8 @@ local DASH_FORCE_DURATION = 0.16
 local USE_LUNGE_ANIMATION = false
 local MAX_AIR_JUMPS = 4
 local MULTI_JUMP_STAMINA_COST = 15
+local AIR_JUMP_INPUT_DEBOUNCE = 0.1
+local GROUND_JUMP_GRACE = 0.14
 local MAX_DOWNWARD_ANGLE = math.rad(60)
 
 local _lastLungeTime = 0
@@ -32,6 +35,9 @@ local _maxStamina = 100
 local _currentHP = 100
 local _maxHP = 100
 local lungeCooldownExpiry = 0
+local observedGroundJumpVelocity = 0
+local lastGroundJumpTime = 0
+local lastAirJumpTime = 0
 
 local _lungeModule = {}
 
@@ -264,6 +270,8 @@ local function lungeFOVPunch()
 end
 
 local cachedLungeTrack = nil
+local cachedAirJumpTrack = nil
+local airJumpAnimationSerial = 0
 
 local function playLungeAnimation(_humanoid)
 	if not USE_LUNGE_ANIMATION then return end
@@ -275,6 +283,19 @@ local function playLungeAnimation(_humanoid)
 	task.delay(LUNGE_VFX_DURATION, function()
 		if cachedLungeTrack then
 			cachedLungeTrack:Stop(0.1)
+		end
+	end)
+end
+
+local function playAirJumpAnimation()
+	if not cachedAirJumpTrack then return end
+	airJumpAnimationSerial += 1
+	local serial = airJumpAnimationSerial
+	cachedAirJumpTrack:Stop(0)
+	cachedAirJumpTrack:Play(0.03, 1, 1)
+	task.delay(0.42, function()
+		if serial == airJumpAnimationSerial and cachedAirJumpTrack then
+			cachedAirJumpTrack:Stop(0.08)
 		end
 	end)
 end
@@ -400,6 +421,9 @@ local function performAirJump()
 	if not isAirborne then return end
 	if airJumpsUsed >= MAX_AIR_JUMPS then return end
 	if currentStamina < MULTI_JUMP_STAMINA_COST then return end
+	local now = os.clock()
+	if now - lastGroundJumpTime < GROUND_JUMP_GRACE then return end
+	if now - lastAirJumpTime < AIR_JUMP_INPUT_DEBOUNCE then return end
 
 	local humanoid = getHumanoid()
 	if not humanoid or humanoid.Health <= 0 then return end
@@ -409,14 +433,22 @@ local function performAirJump()
 	if not hrp then return end
 
 	airJumpsUsed += 1
+	lastAirJumpTime = now
 
-	local jumpImpulse = humanoid.JumpPower
+	local jumpImpulse = MovementPhysicsModule.getRepeatJumpVelocity(
+		humanoid.UseJumpPower,
+		humanoid.JumpPower,
+		humanoid.JumpHeight,
+		workspace.Gravity,
+		observedGroundJumpVelocity
+	)
 	hrp.AssemblyLinearVelocity = Vector3.new(
 		hrp.AssemblyLinearVelocity.X,
 		jumpImpulse,
 		hrp.AssemblyLinearVelocity.Z
 	)
 
+	playAirJumpAnimation()
 	spawnDoubleJumpVFX(character)
 end
 
@@ -454,8 +486,39 @@ local function setupCharacter(character)
 	lungeCooldownExpiry = 0
 	airJumpsUsed = 0
 	isAirborne = false
+	lastGroundJumpTime = 0
+	lastAirJumpTime = 0
+	observedGroundJumpVelocity = MovementPhysicsModule.getConfiguredJumpVelocity(
+		humanoid.UseJumpPower,
+		humanoid.JumpPower,
+		humanoid.JumpHeight,
+		workspace.Gravity
+	)
 
 	cachedLungeTrack = nil
+	cachedAirJumpTrack = nil
+	airJumpAnimationSerial += 1
+	task.defer(function()
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+		if not animator then
+			animator = humanoid:WaitForChild("Animator", 5)
+		end
+		if not animator then return end
+
+		local animateScript = character:FindFirstChild("Animate") or character:WaitForChild("Animate", 5)
+		local jumpFolder = animateScript and animateScript:FindFirstChild("jump")
+		local jumpAnimation = jumpFolder and jumpFolder:FindFirstChildWhichIsA("Animation", true)
+		if not jumpAnimation then
+			jumpAnimation = Instance.new("Animation")
+			jumpAnimation.AnimationId = humanoid.RigType == Enum.HumanoidRigType.R15
+				and "rbxassetid://507765000"
+				or "rbxassetid://125750702"
+		end
+
+		cachedAirJumpTrack = animator:LoadAnimation(jumpAnimation)
+		cachedAirJumpTrack.Priority = Enum.AnimationPriority.Action
+	end)
+
 	if USE_LUNGE_ANIMATION then
 		task.defer(function()
 			local animator = humanoid:FindFirstChildOfClass("Animator")
@@ -473,7 +536,31 @@ local function setupCharacter(character)
 
 	humanoid.StateChanged:Connect(function(_oldState, newState)
 		if newState == Enum.HumanoidStateType.Freefall or newState == Enum.HumanoidStateType.Jumping then
+			local startedGroundJump = newState == Enum.HumanoidStateType.Jumping and not isAirborne
 			isAirborne = true
+			if startedGroundJump then
+				lastGroundJumpTime = os.clock()
+				observedGroundJumpVelocity = MovementPhysicsModule.getConfiguredJumpVelocity(
+					humanoid.UseJumpPower,
+					humanoid.JumpPower,
+					humanoid.JumpHeight,
+					workspace.Gravity
+				)
+				task.defer(function()
+					local hrp = character:FindFirstChild("HumanoidRootPart")
+					if hrp and hrp.Parent then
+						observedGroundJumpVelocity = math.max(
+							MovementPhysicsModule.getConfiguredJumpVelocity(
+								humanoid.UseJumpPower,
+								humanoid.JumpPower,
+								humanoid.JumpHeight,
+								workspace.Gravity
+							),
+							hrp.AssemblyLinearVelocity.Y
+						)
+					end
+				end)
+			end
 		elseif newState == Enum.HumanoidStateType.Landed or newState == Enum.HumanoidStateType.Running then
 			isAirborne = false
 			airJumpsUsed = 0

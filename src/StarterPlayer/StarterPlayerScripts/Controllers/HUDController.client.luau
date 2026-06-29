@@ -61,7 +61,6 @@ local TotalFocusToggle    = Remotes:WaitForChild("TotalFocusToggle")
 local TotalFocusRebirth   = Remotes:WaitForChild("TotalFocusRebirth")
 local SelflessStateChanged = Remotes:WaitForChild("SelflessStateChanged")
 local SelflessStateToggle  = Remotes:WaitForChild("SelflessStateToggle")
-local DodgePointsChanged   = Remotes:WaitForChild("DodgePointsChanged")
 
 local okTitleModule, TitleModule = pcall(require, Modules:WaitForChild("TitleModule", 5))
 if not okTitleModule then
@@ -3160,7 +3159,7 @@ end
 
 -- Total Focus panel
 local tfAccent = Color3.fromRGB(0, 220, 80)
-local tfPanel, tfXpFill, tfXpText, tfBtn = makeAbilityPanel(82, "TOTAL FOCUS", tfAccent)
+local tfPanel, tfXpFill, tfXpText, tfBtn = makeAbilityPanel(100, "TOTAL FOCUS", tfAccent)
 local tfTierLabel = tfPanel:FindFirstChild("TierLabel") :: TextLabel
 tfBtn.Text = "ACTIVATE  [J / D-UP]"
 
@@ -3228,40 +3227,6 @@ local ssPanel, ssXpFill, ssXpText, ssBtn = makeAbilityPanel(0, "SELFLESS STATE",
 local ssTierLabel = ssPanel:FindFirstChild("TierLabel") :: TextLabel
 ssBtn.Text = "ACTIVATE  [C / D-DN]"
 
-ssPanel.Size = UDim2.fromOffset(PANEL_W, 86)
-
-local dodgeBg = Instance.new("Frame")
-dodgeBg.Size = UDim2.new(1, -(PANEL_PAD * 2), 0, 6)
-dodgeBg.Position = UDim2.fromOffset(PANEL_PAD, 66)
-dodgeBg.BackgroundColor3 = BAR_BG2
-dodgeBg.BorderSizePixel = 0
-dodgeBg.Parent = ssPanel
-
-local dodgeBgCorner = Instance.new("UICorner")
-dodgeBgCorner.CornerRadius = UDim.new(0, 3)
-dodgeBgCorner.Parent = dodgeBg
-
-local dodgeFill = Instance.new("Frame")
-dodgeFill.Size = UDim2.fromScale(1, 1)
-dodgeFill.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
-dodgeFill.BorderSizePixel = 0
-dodgeFill.Parent = dodgeBg
-
-local dodgeFillCorner = Instance.new("UICorner")
-dodgeFillCorner.CornerRadius = UDim.new(0, 3)
-dodgeFillCorner.Parent = dodgeFill
-
-local dodgeLabel = Instance.new("TextLabel")
-dodgeLabel.Size = UDim2.fromOffset(90, 9)
-dodgeLabel.Position = UDim2.fromOffset(PANEL_PAD, 57)
-dodgeLabel.BackgroundTransparency = 1
-dodgeLabel.Font = Enum.Font.Gotham
-dodgeLabel.TextSize = 7
-dodgeLabel.TextColor3 = Color3.fromRGB(140, 180, 220)
-dodgeLabel.TextXAlignment = Enum.TextXAlignment.Left
-dodgeLabel.Text = "DODGE POINTS: 100"
-dodgeLabel.Parent = ssPanel
-
 ssBtn.MouseButton1Click:Connect(function()
 	SelflessStateToggle:FireServer()
 end)
@@ -3293,12 +3258,6 @@ SelflessStateChanged.OnClientEvent:Connect(function(state)
 		ssBtn.Text = "ACTIVATE  [C / D-DN]"
 		ssBtn.BackgroundTransparency = 0.55
 	end
-end)
-
-DodgePointsChanged.OnClientEvent:Connect(function(points: number)
-	local pct = math.clamp(points / 100, 0, 1)
-	TweenService:Create(dodgeFill, TweenInfo.new(0.2), {Size = UDim2.fromScale(pct, 1)}):Play()
-	dodgeLabel.Text = "DODGE POINTS: " .. tostring(math.floor(points))
 end)
 
 print("[HUDController] Loaded")

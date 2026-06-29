@@ -1,6 +1,6 @@
 # DemonBlade2
 
-DemonBlade2 is a Roblox experience developed with VS Code, Git, and Rojo. The repository is the source of truth for scripts, remotes, services, complex Studio assets, and deployment configuration.
+DemonBlade2 is a Roblox experience developed with VS Code, Git, and Rojo. The repository is the source of truth for code and managed assets. The authored snowy `Workspace` remains Studio-owned.
 
 ## Project Shape
 
@@ -8,9 +8,9 @@ DemonBlade2 is a Roblox experience developed with VS Code, Git, and Rojo. The re
 - `src/` contains the Roblox DataModel tree used by Rojo.
 - `src/**/*.luau` contains scripts and modules.
 - `src/**/*.model.json` contains simple instances such as remotes and values.
-- `src/**/*.rbxm` contains complex Studio-authored assets such as models, terrain, VFX, UI, lighting children, and chat configuration.
+- `src/**/*.rbxm` contains managed assets such as models, VFX, UI, lighting children, and chat configuration.
 - `tools/` contains repeatable export and verification helpers.
-- `.github/workflows/roblox-ci.yml` validates and deploys the game.
+- `.github/workflows/roblox-ci.yml` validates the code project.
 
 ## Codebase Digest
 
@@ -45,11 +45,10 @@ Assets are intentionally source-controlled:
 - `src/ReplicatedStorage/Assets`
 - `src/ReplicatedStorage/VFXAssets`
 - `src/ReplicatedStorage/NPCModels`
-- `src/Workspace`
 - `src/Lighting`
 - `src/TextChatService`
 
-Those `.rbxm` files preserve Studio-authored models, terrain, lighting children, VFX, UI, and chat settings.
+The snowy terrain, village, trees, and map props stay in the Roblox place's `Workspace`. `default.project.json` deliberately does not map `src/Workspace`.
 
 ## Local Development
 
@@ -59,20 +58,20 @@ Use Rojo to sync the filesystem into a local Roblox Studio session:
 rojo serve default.project.json
 ```
 
-Then connect from the Rojo Studio plugin. Local Studio is for testing. VS Code and Git are the source of truth.
+Open the snowy local place first, then connect from the Rojo Studio plugin. Rojo updates managed code without replacing the Studio-owned `Workspace`.
 
 See [docs/DEV_ENVIRONMENT.md](docs/DEV_ENVIRONMENT.md) for full setup, Rojo usage, Lemonade/Studio asset import, and verification commands.
 
 ## Branch And Deploy Flow
 
 ```text
-feature branch -> pull request -> dev -> staging place
-main -> production place
+feature branch -> pull request -> dev -> validate -> Studio staging publish
+main -> validate -> Studio production publish
 ```
 
-- `dev` deploys to `Staging Env - Demon Blade 2`.
-- `main` deploys to `Demon Blade 2 Publish`.
-- Production should be protected with GitHub Environment approval.
+- GitHub Actions validates `dev` and `main`.
+- Publish by opening the correct snowy place in Studio, connecting Rojo, testing, and using **Publish to Roblox**.
+- Direct `rojo upload default.project.json` is disabled because it would publish a complete place without the Studio-owned map.
 
 See [docs/PULL_REQUESTS.md](docs/PULL_REQUESTS.md) for branch naming, PR expectations, checks, and merge rules.
 
@@ -85,32 +84,16 @@ Use GitHub Issues for reproducible bugs and attach Studio Output logs for gamepl
 Before accepting major Rojo changes or opening a PR:
 
 ```powershell
+tools\lune\lune.exe run tests\unit\run.luau
 rojo build default.project.json -o build_check.rbxl
-tools\lune\lune.exe run tools\compare_full_structure.luau
-tools\lune\lune.exe run tools\compare_key_service_properties.luau
 Remove-Item build_check.rbxl
 ```
 
 The expected result is:
 
 ```text
-Missing from build: 0
-Extra in build: 0
-Class changes: 0
-Key service property mismatches: 0
+UnitTests: all passing
+Built project to build_check.rbxl
 ```
 
-## GitHub Secrets
-
-Deployment uses Roblox Open Cloud keys stored as GitHub Actions secrets:
-
-```text
-STAGING_PLACE_ID
-STAGING_UNIVERSE_ID
-ROBLOXSTAGINGAPIKEY
-PRODUCTION_PLACE_ID
-PRODUCTION_UNIVERSE_ID
-ROBLOXPRODUCTIONAPIKEY
-```
-
-Never commit real API keys.
+Open Cloud deployment secrets are reserved for a future map-preserving deployment process. They are not used by the current validation-only workflow.

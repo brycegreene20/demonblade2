@@ -5,9 +5,10 @@ This guide explains how to work on DemonBlade2 locally without breaking the Robl
 ## Mental Model
 
 ```text
-VS Code + Git = source of truth
+VS Code + Git = source of truth for code and managed assets
+Roblox Studio = source of truth for the snowy Workspace map
 Rojo serve = local sync from VS Code into Studio
-Roblox Studio = testing and visual editing
+Roblox Studio = map editing, testing, and publishing
 Lemonade -> Studio = prototype path
 tools/export... = controlled Studio back to VS Code path
 ```
@@ -79,12 +80,12 @@ For code changes:
 3. Test in Studio.
 4. Commit the repo changes.
 
-For complex Studio assets:
+For complex managed assets outside `Workspace`:
 
 1. Edit or prototype in Studio.
 2. Save the place to `DemonBlade2.rbxl`.
-3. Export Studio assets back into `src`.
-4. Verify the Rojo build matches the Studio place.
+3. Export only the required managed assets back into `src`.
+4. Verify the Rojo build.
 5. Commit the exported `.rbxm` files.
 
 ## Exporting Studio/Lemonade Changes Back To VS Code
@@ -95,27 +96,23 @@ From the repo root:
 
 ```powershell
 tools\lune\lune.exe run tools\export_non_scripts_from_rbxl.luau
-tools\lune\lune.exe run tools\export_workspace_duplicate_scripts.luau
 ```
 
-The first script exports non-script services and assets into `.rbxm` files. The second preserves the duplicate `Workspace.Script` that exists in the original place.
+Do not copy the snowy map into `src/Workspace` during normal development. `Workspace` is intentionally absent from the Rojo path mapping and remains in Studio.
 
 Then verify:
 
 ```powershell
 rojo build default.project.json -o build_check.rbxl
-tools\lune\lune.exe run tools\compare_full_structure.luau
-tools\lune\lune.exe run tools\compare_key_service_properties.luau
+tools\lune\lune.exe run tests\unit\run.luau
 Remove-Item build_check.rbxl
 ```
 
 Expected result:
 
 ```text
-Missing from build: 0
-Extra in build: 0
-Class changes: 0
-Key service property mismatches: 0
+UnitTests: all passing
+Built project to build_check.rbxl
 ```
 
 ## Script Changes From Studio Or Lemonade
@@ -337,11 +334,21 @@ Use three Roblox environments:
 
 ```text
 Local Studio place: individual developer testing
-Staging Env - Demon Blade 2: deployed from dev
-Demon Blade 2 Publish: deployed from main
+Staging Env - Demon Blade 2: manually published after dev validation
+Demon Blade 2 Publish: manually published after main validation
 ```
 
 Local development should not publish directly to production.
+
+### Map-preserving publish flow
+
+1. Open the existing snowy staging or production place from Roblox.
+2. Run `rojo serve default.project.json`.
+3. Connect Rojo and verify that `Workspace` is unchanged.
+4. Test the game in Studio.
+5. Use **File > Publish to Roblox** for that same place.
+
+Do not use `rojo upload default.project.json`. It publishes a complete code-only place and cannot preserve a `Workspace` that is intentionally owned only by Studio.
 
 ## Common Commands
 
@@ -363,7 +370,7 @@ Generate sourcemap:
 rojo sourcemap default.project.json --include-non-scripts -o sourcemap.json
 ```
 
-Compare Studio place and Rojo build:
+Compare managed non-Workspace services when investigating asset drift:
 
 ```powershell
 tools\lune\lune.exe run tools\compare_full_structure.luau
@@ -388,8 +395,8 @@ Players/<player name>
 NetworkClient/ClientReplicator
 ```
 
-3. Real project data should be represented under `src` or in `default.project.json`.
-4. If accepting Rojo would delete real project data, stop and export/map it first.
+3. The snowy `Workspace` is real project data but deliberately remains Studio-owned.
+4. If Rojo proposes deleting snowy terrain, village props, or map geometry, stop. `Workspace` should have `$ignoreUnknownInstances: true` and no `$path`.
 
 ## Files That Matter
 

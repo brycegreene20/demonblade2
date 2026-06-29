@@ -80,6 +80,11 @@ local SAVE_FIELDS = {
 local playerData = {}
 local staminaRegenTimers = {}
 local staminaRegenLoops = {}
+local PROGRESSION_FIELDS = {
+	TotalFocusXP = true,
+	TotalFocusRebirths = true,
+	SelflessStateXP = true,
+}
 local DEFAULT_STARTING_TITLE = "DemonSlayer"
 local DEBUG_IDENTITY = true
 
@@ -826,6 +831,16 @@ end
 
 function PlayerDataModule.getData(player)
 	return playerData[player]
+end
+
+function PlayerDataModule.setProgressionField(player, fieldName, value)
+	if not PROGRESSION_FIELDS[fieldName] or type(value) ~= "number" then
+		return false
+	end
+	local data = playerData[player]
+	if not data then return false end
+	data[fieldName] = value
+	return true
 end
 
 function PlayerDataModule.setHP(player, value)

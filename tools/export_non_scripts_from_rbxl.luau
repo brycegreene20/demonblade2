@@ -16,7 +16,6 @@ local exports: { { path: { string }, outDir: string, childrenOnly: boolean? } } 
 	{ path = { "ReplicatedFirst" }, outDir = "src/ReplicatedFirst", childrenOnly = true },
 	{ path = { "Lighting" }, outDir = "src/Lighting", childrenOnly = true },
 	{ path = { "TextChatService" }, outDir = "src/TextChatService", childrenOnly = true },
-	{ path = { "Workspace" }, outDir = "src/Workspace", childrenOnly = true },
 }
 
 local function sanitize(name: string): string

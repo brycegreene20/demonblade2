@@ -9,7 +9,6 @@ local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 local SelflessStateToggle  = Remotes:WaitForChild("SelflessStateToggle")
 local SelflessStateChanged = Remotes:WaitForChild("SelflessStateChanged")
-local DodgePointsChanged   = Remotes:WaitForChild("DodgePointsChanged")
 
 -- PC key: C  |  Controller: DPad Down  |  Mobile: [Realm] button (wired separately in mobile UI)
 local TOGGLE_KEY = Enum.KeyCode.C
@@ -62,13 +61,13 @@ local function spawnAura(tier: number)
 	aura.Material = Enum.Material.Neon
 	aura.Color = color
 	aura.Transparency = 0.7
+	aura.CFrame = hrp.CFrame
 	aura.Parent = char
 
 	local weld = Instance.new("WeldConstraint")
 	weld.Part0 = hrp
 	weld.Part1 = aura
 	weld.Parent = aura
-	aura.CFrame = hrp.CFrame
 
 	TweenService:Create(aura, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
 		Transparency = 0.85,
@@ -91,10 +90,6 @@ SelflessStateChanged.OnClientEvent:Connect(function(state: { active: boolean, ti
 	applyVisuals()
 end)
 
-DodgePointsChanged.OnClientEvent:Connect(function(_points: number)
-	-- HUD update hook — connect to HUD here when ready
-end)
-
 UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
 	if gameProcessed then return end
 	if input.KeyCode ~= TOGGLE_KEY and input.KeyCode ~= Enum.KeyCode.DPadDown then return end
@@ -109,4 +104,4 @@ LocalPlayer.CharacterAdded:Connect(function()
 	applyVisuals()
 end)
 
-print("[SelflessStateController] Loaded — G to toggle Selfless State")
+print("[SelflessStateController] Loaded — C to toggle Selfless State")

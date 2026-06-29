@@ -19,10 +19,19 @@ SelflessStateModule.TIER_XP = {
 	45000,  -- V10
 }
 
--- Dodge points pool
-SelflessStateModule.MAX_DODGE_POINTS   = 100
-SelflessStateModule.DODGE_REGEN_RATE   = 5   -- per second
-SelflessStateModule.XP_DODGE_COST      = 10  -- dodge points spent per XP event
+-- The old dodge-point pool only throttled XP and never dodged attacks.
+-- Keep the persisted data field for compatibility, but do not gate progression on it.
+SelflessStateModule.REQUIRES_DODGE_POINTS_FOR_XP = false
+local XP_BY_EVENT: { [string]: number } = {
+	DamageDealt = 1,
+	DamageTaken = 3,
+	Kill = 10,
+}
+SelflessStateModule.XP_BY_EVENT = XP_BY_EVENT
+
+function SelflessStateModule.getXPForEvent(eventName: string): number
+	return XP_BY_EVENT[eventName] or 0
+end
 
 -- Returns 1-based tier (1 = V1) from accumulated XP.
 function SelflessStateModule.getTier(xp: number): number

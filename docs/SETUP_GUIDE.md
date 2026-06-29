@@ -170,6 +170,8 @@ Rojo is not on your PATH. Re-do Step 4, make sure you added the correct folder, 
 **Rojo shows a long list of deletions when connecting**
 Do not accept if you see things like `Players/YourName` or `NetworkClient/ClientReplicator` in the delete list — those are normal Studio runtime objects, not project files. Only accept changes that relate to actual game scripts and assets.
 
+If Rojo proposes deleting snowy terrain, village props, trees, or other `Workspace` map objects, stop. Open the correct snowy place and confirm `default.project.json` keeps `Workspace.$ignoreUnknownInstances` enabled with no Workspace `$path`.
+
 **Studio does not show the Rojo plugin button**
 The plugin was not installed. Re-do Step 5 and make sure you click **Install**, not just **Try**.
 

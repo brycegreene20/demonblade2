@@ -1,27 +1,14 @@
-# Roblox Deployment Secrets
+# Reserved Roblox Deployment Secrets
 
-Add these in GitHub:
+The current GitHub workflow validates code but does not deploy places.
 
-`Settings -> Secrets and variables -> Actions -> New repository secret`
+Direct `rojo upload default.project.json` is intentionally disabled because the snowy `Workspace` is Studio-owned and absent from the Rojo project. Uploading that code-only project would replace the destination place without its map.
 
-## Staging
+Publish staging and production through Roblox Studio:
 
-These deploy the `dev` branch to `Staging Env - Demon Blade 2`.
+1. Open the existing snowy target place.
+2. Connect `rojo serve default.project.json`.
+3. Test and confirm `Workspace` is unchanged.
+4. Use **Publish to Roblox**.
 
-```text
-STAGING_PLACE_ID=93615741926072
-STAGING_UNIVERSE_ID=10392501904
-ROBLOXSTAGINGAPIKEY=<create this in Roblox Open Cloud>
-```
-
-## Production
-
-These deploy the `main` branch to `Demon Blade 2 Publish`.
-
-```text
-PRODUCTION_PLACE_ID=89198012995322
-PRODUCTION_UNIVERSE_ID=10392511415
-ROBLOXPRODUCTIONAPIKEY=<create this in Roblox Open Cloud>
-```
-
-Do not commit real API keys. Store them only as GitHub Actions secrets.
+The existing Open Cloud secrets can remain reserved for a future deployment pipeline that merges managed code into a verified snowy base place before upload.

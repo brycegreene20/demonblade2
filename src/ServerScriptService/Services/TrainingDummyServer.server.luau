@@ -8,6 +8,7 @@ local DummyTemplate = NPCModels:WaitForChild("TrainingDummy")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
 local CombatModule = require(Modules:WaitForChild("CombatModule"))
+local WorldSpawnConfigModule = require(Modules:WaitForChild("WorldSpawnConfigModule"))
 
 local DUMMY_HP = 500
 local DUMMY_XP_REWARD = 25
@@ -28,21 +29,12 @@ local function debugRewardLog(message)
 	end
 end
 
-local GRID_ORIGIN_X = 30
-local GRID_ORIGIN_Z = 28
-local GRID_COLS = 4
-local GRID_ROWS = 3
-local GRID_SPACING = 8
 local FALLBACK_Y = 0.5
 local MODEL_HALF_HEIGHT = 3
 
 local SPAWN_POSITIONS = {}
-for row = 0, GRID_ROWS - 1 do
-	for col = 0, GRID_COLS - 1 do
-		local x = GRID_ORIGIN_X + col * GRID_SPACING
-		local z = GRID_ORIGIN_Z + row * GRID_SPACING
-		table.insert(SPAWN_POSITIONS, CFrame.new(x, FALLBACK_Y + MODEL_HALF_HEIGHT, z))
-	end
+for _, spawn in WorldSpawnConfigModule.getTrainingDummySpawns() do
+	table.insert(SPAWN_POSITIONS, CFrame.new(spawn.x, FALLBACK_Y + MODEL_HALF_HEIGHT, spawn.z))
 end
 
 local BAR_WIDTH = 4
@@ -240,6 +232,7 @@ local function spawnDummy(spawnCFrame)
 		if lastAttackerId then
 			local attacker = Players:GetPlayerByUserId(lastAttackerId)
 			if attacker then
+				CombatModule.grantStateProgressionEvent(attacker, "Kill")
 				local rewardPlayers = CombatModule.getRewardPlayers(dummy, attacker, 120)
 				for _, rewardedPlayer in rewardPlayers do
 					PlayerDataModule.addXP(rewardedPlayer, DUMMY_XP_REWARD)

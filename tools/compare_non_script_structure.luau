@@ -18,7 +18,6 @@ local serviceNames = {
 	"Lighting",
 	"SoundService",
 	"TextChatService",
-	"Workspace",
 }
 
 local function addTree(instance: Instance, path: string, output: { [string]: string })
