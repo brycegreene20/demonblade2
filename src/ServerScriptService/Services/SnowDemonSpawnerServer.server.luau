@@ -6,7 +6,11 @@ local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 
 local Assets = ReplicatedStorage:WaitForChild("Assets")
-local DemonTemplate = Assets:WaitForChild("ForestDemon")
+local DemonTemplate = Assets:WaitForChild("SnowDemon")
+
+local attackAnimRemote = Instance.new("RemoteEvent")
+attackAnimRemote.Name = "SnowDemonAttackAnim"
+attackAnimRemote.Parent = ReplicatedStorage
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
@@ -28,20 +32,22 @@ local AI_TICK = 0.5
 local MOVE_SPEED = 14
 local LEASH_DISTANCE = 90
 local MIN_DEMON_SEPARATION = 4.5
-local DEMON_HALF_HEIGHT = 3
+local WANDER_RADIUS = 20
+local WANDER_SPEED_MULT = 0.35
 local FALLBACK_Y = 0.5
+local GROUND_OFFSET = 3 -- studs above terrain to place HRP; boss scales this by 1.85
 local DEBUG_DEMON_SPAWNS = false
 local DEBUG_DEMON_REWARDS = false
 
 local function debugSpawnLog(message)
 	if DEBUG_DEMON_SPAWNS then
-		print("[DemonSpawner] " .. message)
+		print("[SnowDemonSpawner] " .. message)
 	end
 end
 
 local function debugRewardLog(message)
 	if DEBUG_DEMON_REWARDS then
-		print("[DemonSpawner] " .. message)
+		print("[SnowDemonSpawner] " .. message)
 	end
 end
 
@@ -66,25 +72,25 @@ local BOSS_STATS = {
 }
 
 local RAW_SPAWNS = {
-	{ x = 42,  z = 36,  level = 1 },
-	{ x = 52,  z = 36,  level = 1 },
-	{ x = 62,  z = 36,  level = 1 },
-	{ x = 72,  z = 36,  level = 1 },
-	{ x = 60,  z = -60,  level = 2 },
-	{ x = -50, z = -80,  level = 2 },
-	{ x = 80,  z = -100, level = 3 },
-	{ x = -70, z = -30,  level = 3 },
-	{ x = 100, z = -40,  level = 4 },
-	{ x = -90, z = -110, level = 5 },
-	{ x = 50,  z = -130, level = 6 },
-	{ x = -40, z = -150, level = 7 },
-	{ x = 128, z = 78,  level = BOSS_STATS.level, boss = true },
+	{ x = -120, z = 60,  level = 1 },
+	{ x = -130, z = 60,  level = 1 },
+	{ x = -140, z = 60,  level = 1 },
+	{ x = -150, z = 60,  level = 1 },
+	{ x = -110, z = -40, level = 2 },
+	{ x = -160, z = -60, level = 2 },
+	{ x = -130, z = -90, level = 3 },
+	{ x = -180, z = 20,  level = 3 },
+	{ x = -200, z = -40, level = 4 },
+	{ x = -170, z = -120, level = 5 },
+	{ x = -140, z = -150, level = 6 },
+	{ x = -200, z = -160, level = 7 },
+	{ x = -220, z = 80,  level = BOSS_STATS.level, boss = true },
 }
 
 local SPAWN_POSITIONS = {}
 for _, raw in RAW_SPAWNS do
 	table.insert(SPAWN_POSITIONS, {
-		pos = CFrame.new(raw.x, FALLBACK_Y + DEMON_HALF_HEIGHT, raw.z),
+		pos = CFrame.new(raw.x, FALLBACK_Y, raw.z),
 		level = raw.level,
 		boss = raw.boss == true,
 	})
@@ -98,7 +104,7 @@ local HP_COLOR_LOW = Color3.fromRGB(180, 30, 30)
 local HP_BG_COLOR = Color3.fromRGB(40, 40, 40)
 
 local demonsFolder = Instance.new("Folder")
-demonsFolder.Name = "ForestDemons"
+demonsFolder.Name = "SnowDemons"
 demonsFolder.Parent = workspace
 
 local activeDemons = {}
@@ -146,7 +152,7 @@ local function createHPBar(parent, name, level)
 	local damageFill = Instance.new("Frame")
 	damageFill.Name = "DamageFill"
 	damageFill.Size = UDim2.fromScale(1, 1)
-	damageFill.BackgroundColor3 = Color3.fromRGB(255, 160, 60)
+	damageFill.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
 	damageFill.BorderSizePixel = 0
 	damageFill.ZIndex = 2
 	damageFill.Parent = bg
@@ -186,7 +192,7 @@ local function createHPBar(parent, name, level)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Font = Enum.Font.GothamBold
 	nameLabel.TextScaled = true
-	nameLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+	nameLabel.TextColor3 = Color3.fromRGB(120, 200, 255)
 	nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
 	nameLabel.TextStrokeTransparency = 0.4
 	nameLabel.Text = name .. " [Lv." .. level .. "]"
@@ -204,7 +210,7 @@ local function spawnDemonAttackVFX(demon)
 	playEnemySFX(root, "rbxasset://sounds/action_get_up.mp3", 0.34, 0.58)
 
 	local slash = Instance.new("Part")
-	slash.Name = "DemonAttackSlash"
+	slash.Name = "SnowDemonAttackSlash"
 	slash.Size = Vector3.new(0.15, 5, 5)
 	slash.CFrame = root.CFrame * CFrame.new(0, 0, -3) * CFrame.Angles(0, 0, math.rad(35))
 	slash.Anchored = true
@@ -213,16 +219,16 @@ local function spawnDemonAttackVFX(demon)
 	slash.CanTouch = false
 	slash.CastShadow = false
 	slash.Material = Enum.Material.Neon
-	slash.Color = Color3.fromRGB(190, 20, 45)
+	slash.Color = Color3.fromRGB(80, 180, 255)
 	slash.Transparency = 0.15
 	slash.Parent = workspace
 
 	local attachment = Instance.new("Attachment")
 	attachment.Parent = slash
 	local sparks = Instance.new("ParticleEmitter")
-	sparks.Name = "DemonClawSparks"
+	sparks.Name = "SnowDemonClawSparks"
 	sparks.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	sparks.Color = ColorSequence.new(Color3.fromRGB(255, 35, 65), Color3.fromRGB(90, 0, 120))
+	sparks.Color = ColorSequence.new(Color3.fromRGB(180, 230, 255), Color3.fromRGB(60, 120, 220))
 	sparks.LightEmission = 0.9
 	sparks.Lifetime = NumberRange.new(0.18, 0.35)
 	sparks.Rate = 0
@@ -258,7 +264,7 @@ local function spawnBossDemonArtVFX(demon)
 	playEnemySFX(root, "rbxasset://sounds/impact_explosion_03.mp3", 0.42, 0.72)
 
 	local orb = Instance.new("Part")
-	orb.Name = "DemonBossBloodArt"
+	orb.Name = "SnowDemonBossBlizzardArt"
 	orb.Shape = Enum.PartType.Ball
 	orb.Size = Vector3.new(4, 4, 4)
 	orb.CFrame = root.CFrame
@@ -268,16 +274,16 @@ local function spawnBossDemonArtVFX(demon)
 	orb.CanTouch = false
 	orb.CastShadow = false
 	orb.Material = Enum.Material.Neon
-	orb.Color = Color3.fromRGB(170, 0, 45)
+	orb.Color = Color3.fromRGB(60, 160, 255)
 	orb.Transparency = 0.25
 	orb.Parent = workspace
 
 	local attachment = Instance.new("Attachment")
 	attachment.Parent = orb
 	local pulse = Instance.new("ParticleEmitter")
-	pulse.Name = "BossBloodArtPulse"
+	pulse.Name = "BossBlizzardArtPulse"
 	pulse.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	pulse.Color = ColorSequence.new(Color3.fromRGB(255, 30, 70), Color3.fromRGB(100, 0, 150))
+	pulse.Color = ColorSequence.new(Color3.fromRGB(180, 230, 255), Color3.fromRGB(40, 100, 200))
 	pulse.LightEmission = 0.9
 	pulse.Lifetime = NumberRange.new(0.35, 0.7)
 	pulse.Rate = 0
@@ -318,72 +324,6 @@ function playEnemySFX(root, soundId, volume, playbackSpeed)
 	Debris:AddItem(sound, 2)
 end
 
-local function buildPoseRig(demon, root)
-	local poseRig = {
-		Parts = {},
-		Offsets = {},
-	}
-	local partCandidates = {
-		{ logical = "Head",      candidates = { "Head" } },
-		{ logical = "Left Arm",  candidates = { "Left Arm",  "LeftUpperArm" } },
-		{ logical = "Right Arm", candidates = { "Right Arm", "RightUpperArm" } },
-		{ logical = "Left Leg",  candidates = { "Left Leg",  "LeftUpperLeg" } },
-		{ logical = "Right Leg", candidates = { "Right Leg", "RightUpperLeg" } },
-	}
-	for _, entry in partCandidates do
-		for _, name in entry.candidates do
-			local part = demon:FindFirstChild(name)
-			if part and part:IsA("BasePart") then
-				poseRig.Parts[entry.logical] = part
-				poseRig.Offsets[entry.logical] = root.CFrame:ToObjectSpace(part.CFrame)
-				break
-			end
-		end
-	end
-	return poseRig
-end
-
-local function tweenPosePart(demonState, partName, angles, offset)
-	local poseRig = demonState.poseRig
-	if not poseRig then return end
-	local part = poseRig.Parts[partName]
-	local baseOffset = poseRig.Offsets[partName]
-	if not part or not baseOffset then return end
-
-	local moveOffset = offset or Vector3.zero
-	-- Direct CFrame set every Heartbeat frame instead of TweenService; TweenService tweens
-	-- fight with PivotTo (which also moves parts every frame), causing limbs to lag behind torso.
-	part.CFrame = demonState.hrp.CFrame * baseOffset * CFrame.new(moveOffset) * CFrame.Angles(angles.X, angles.Y, angles.Z)
-end
-
-local function animateDemonPose(demonState, pose, dt)
-	if not demonState.poseRig then return end
-	-- When called from Heartbeat with dt, accumulate by time so rate is fps-independent.
-	local speed = pose == "walk" and 2.5 or 0.9
-	demonState.walkPhase = (demonState.walkPhase or 0) + speed * (dt or AI_TICK)
-
-	local phase = demonState.walkPhase
-	local swing = math.sin(phase) * (pose == "walk" and 0.55 or 0.08)
-	local legSwing = math.sin(phase) * (pose == "walk" and 0.38 or 0.04)
-	local headYaw = math.sin(phase * 0.6) * (pose == "idle" and 0.12 or 0.04)
-	local attack = pose == "attack"
-
-	if attack then
-		tweenPosePart(demonState, "Right Arm", Vector3.new(math.rad(-82), math.rad(12), math.rad(28)), Vector3.new(0, 0.1, -0.15))
-		tweenPosePart(demonState, "Left Arm", Vector3.new(math.rad(-45), math.rad(-10), math.rad(-24)), Vector3.new(0, 0.05, -0.05))
-		tweenPosePart(demonState, "Head", Vector3.new(math.rad(-8), 0, 0), Vector3.new(0, 0, -0.08))
-		tweenPosePart(demonState, "Right Leg", Vector3.new(math.rad(12), 0, 0), Vector3.zero)
-		tweenPosePart(demonState, "Left Leg", Vector3.new(math.rad(-10), 0, 0), Vector3.zero)
-		return
-	end
-
-	tweenPosePart(demonState, "Right Arm", Vector3.new(swing, 0, math.rad(8)), Vector3.zero)
-	tweenPosePart(demonState, "Left Arm", Vector3.new(-swing, 0, math.rad(-8)), Vector3.zero)
-	tweenPosePart(demonState, "Right Leg", Vector3.new(-legSwing, 0, 0), Vector3.zero)
-	tweenPosePart(demonState, "Left Leg", Vector3.new(legSwing, 0, 0), Vector3.zero)
-	tweenPosePart(demonState, "Head", Vector3.new(0, headYaw, 0), Vector3.zero)
-end
-
 local function isSafePosition(position)
 	-- selene: allow(global_usage)
 	local zoneServer = shared and shared.ZoneServer
@@ -392,7 +332,6 @@ end
 
 local function separateNextPos(pos, selfState)
 	local selfHRP = selfState.hrp
-	-- Check both folders so Forest and Snow demons push each other apart too.
 	for _, folderName in {"ForestDemons", "SnowDemons"} do
 		local folder = workspace:FindFirstChild(folderName)
 		if not folder then continue end
@@ -403,8 +342,6 @@ local function separateNextPos(pos, selfState)
 			local diff = Vector3.new(pos.X - otherHRP.Position.X, 0, pos.Z - otherHRP.Position.Z)
 			local d = diff.Magnitude
 			if d < MIN_DEMON_SEPARATION then
-				-- When d ≈ 0 (exactly stacked), fall back to the demon's stored escape angle
-				-- so every demon pushes in a unique direction instead of NaN.
 				local pushDir = d > 0.05 and diff.Unit
 					or Vector3.new(math.cos(selfState.sepAngle), 0, math.sin(selfState.sepAngle))
 				pos = pos + pushDir * (MIN_DEMON_SEPARATION - d) * 0.5
@@ -442,23 +379,22 @@ local function spawnDemon(spawnData)
 	local level = spawnData.level
 	local isBoss = spawnData.boss == true
 	local stats = isBoss and BOSS_STATS or getStatsForLevel(level)
-	local enemyType = isBoss and "DemonBoss" or "ForestDemon"
-	local displayName = isBoss and "Demon Boss" or "Forest Demon"
+	local enemyType = isBoss and "SnowDemonBoss" or "SnowDemon"
+	local displayName = isBoss and "Snow Demon Boss" or "Snow Demon"
 
 	local demon = DemonTemplate:Clone()
-	demon.Name = isBoss and "DemonBoss" or ("ForestDemon_Lv" .. level)
+	demon.Name = isBoss and "SnowDemonBoss" or ("SnowDemon_Lv" .. level)
 
-	local torso = demon:FindFirstChild("Torso") or demon:FindFirstChild("UpperTorso")
+	-- Support both R6 (Torso) and R15 (UpperTorso/LowerTorso) rigs
+	local torso = demon:FindFirstChild("Torso")
+		or demon:FindFirstChild("UpperTorso")
+		or demon:FindFirstChild("LowerTorso")
 	if not torso then
-		warn("[DemonSpawner] Demon template missing Torso/UpperTorso")
+		warn("[SnowDemonSpawner] SnowDemon template missing Torso — check model structure")
 		demon:Destroy()
 		return
 	end
 
-	-- HRP is used as the model pivot: the R15 importer always creates it
-	-- axis-aligned, whereas mesh parts (UpperTorso etc.) can carry FBX orientation
-	-- bakes. Using a rotated mesh part as the pivot causes the delta-inverse to
-	-- rotate every part flat against the ground.
 	local hrp = demon:FindFirstChild("HumanoidRootPart")
 	if not hrp then
 		hrp = Instance.new("Part")
@@ -469,19 +405,6 @@ local function spawnDemon(spawnData)
 		hrp.CanQuery = true
 		hrp.Parent = demon
 	end
-
-	demon.PrimaryPart = hrp
-	local targetHeight = isBoss and 8.5 or 6.29
-	local rawExtents = demon:GetExtentsSize()
-	if rawExtents.Y > 0 then
-		local ok, scaleErr = pcall(function()
-			demon:ScaleTo(targetHeight / rawExtents.Y)
-		end)
-		if not ok then
-			warn("[DemonSpawner] Could not scale demon: " .. tostring(scaleErr))
-		end
-	end
-
 	local streamAnchor = demon:FindFirstChild("StreamAnchor")
 	if not streamAnchor then
 		streamAnchor = Instance.new("Part")
@@ -492,7 +415,6 @@ local function spawnDemon(spawnData)
 		streamAnchor.CanQuery = false
 		streamAnchor.CanTouch = false
 		streamAnchor.Anchored = true
-		streamAnchor.CFrame = spawnCFrame
 		streamAnchor.Parent = demon
 	end
 
@@ -514,56 +436,47 @@ local function spawnDemon(spawnData)
 	demon:SetAttribute("XPReward", stats.xp)
 	demon:SetAttribute("IsBoss", isBoss)
 
-	-- Capture HRP's world position now, before anything moves.
-	-- Only the position (not the rotation) is used for the delta so the result is
-	-- a pure translation — no rotation is inverted onto the parts, which is what
-	-- was causing the character to lie flat when the FBX pivot had a baked rotation.
-	local templateHRPPos = hrp.Position
-	hrp.Anchored = true
-
+	-- HRP is always world-aligned in a properly set-up rig; using it as PrimaryPart
+	-- ensures PivotTo keeps the model upright regardless of the torso's internal rotation.
+	demon.PrimaryPart = hrp
 	demon.Parent = demonsFolder
 
-	-- Translate every part so HRP's template position aligns with spawnCFrame.
-	local delta = spawnCFrame * CFrame.new(templateHRPPos):Inverse()
-	for _, part in demon:GetDescendants() do
-		if part:IsA("BasePart") then
-			part.Anchored = true
-			part.CFrame = delta * part.CFrame
-		end
-	end
-	-- Force HRP and the stream anchor to exact spawn position regardless of delta offset.
-	hrp.CFrame = spawnCFrame
-	streamAnchor.CFrame = spawnCFrame
-
-	-- Ground-snap: shift the whole model so the lowest visible part's bottom edge
-	-- sits at FALLBACK_Y, handling rigs where HRP is not flush with the feet.
-	local lowestY = math.huge
-	for _, part in demon:GetDescendants() do
-		if part:IsA("BasePart")
-			and part.Name ~= "HumanoidRootPart"
-			and part.Name ~= "StreamAnchor"
-			and part.Name ~= "DebugRadius" then
-			local bottom = part.Position.Y - part.Size.Y * 0.5
-			if bottom < lowestY then
-				lowestY = bottom
-			end
-		end
-	end
-	if lowestY ~= math.huge then
-		local lift = Vector3.new(0, FALLBACK_Y - lowestY, 0)
-		for _, part in demon:GetDescendants() do
-			if part:IsA("BasePart") then
-				part.CFrame = part.CFrame + lift
-			end
+	if isBoss then
+		local ok, scaleErr = pcall(function()
+			demon:ScaleTo(1.85)
+		end)
+		if not ok then
+			warn("[SnowDemonSpawner] Could not scale Snow Demon Boss: " .. tostring(scaleErr))
 		end
 	end
 
-	debugSpawnLog("Parts repositioned for Lv." .. level .. " at " .. tostring(spawnCFrame.Position))
+	-- Only anchor HRP and StreamAnchor. Limbs must stay unanchored so Motor6D
+	-- joints can apply animation transforms. The joint chain holds them in place.
 	for _, part in demon:GetDescendants() do
 		if part:IsA("BasePart") then
-			debugSpawnLog("  " .. part.Name .. " at " .. tostring(part.Position))
+			part.CanCollide = false
+			local isRoot = part == hrp or part.Name == "StreamAnchor"
+			part.Anchored = isRoot
 		end
 	end
+	hrp.Anchored = true
+
+	-- Raycast down from high Y to find actual terrain so the model lands on the ground.
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = {demonsFolder}
+	local rayResult = workspace:Raycast(
+		Vector3.new(spawnCFrame.X, 500, spawnCFrame.Z),
+		Vector3.new(0, -600, 0),
+		rayParams
+	)
+	local groundY = rayResult and rayResult.Position.Y or FALLBACK_Y
+	local groundOffset = isBoss and GROUND_OFFSET * 1.85 or GROUND_OFFSET
+	local placeCFrame = CFrame.new(spawnCFrame.X, groundY + groundOffset, spawnCFrame.Z)
+
+	demon:PivotTo(placeCFrame)
+	hrp.CFrame = placeCFrame
+	streamAnchor.CFrame = placeCFrame
 
 	CollectionService:AddTag(demon, "Demon")
 
@@ -593,7 +506,7 @@ local function spawnDemon(spawnData)
 				debugCylinder.CanCollide = false
 				debugCylinder.CanQuery = false
 				debugCylinder.CanTouch = false
-				debugCylinder.Color = Color3.fromRGB(200, 40, 40)
+				debugCylinder.Color = Color3.fromRGB(80, 160, 255)
 				debugCylinder.Transparency = 0.85
 				debugCylinder.Material = Enum.Material.ForceField
 				debugCylinder.Parent = demon
@@ -624,12 +537,10 @@ local function spawnDemon(spawnData)
 		isAttacking = false,
 		isBoss = isBoss,
 		lastSpecial = 0,
-		poseRig = buildPoseRig(demon, hrp),
-		walkPhase = 0,
-		attackPoseUntil = 0,
 		moveCFrame = nil,
-		currentPose = "idle",
 		sepAngle = math.random() * 2 * math.pi,
+		wanderTarget = nil,
+		wanderTimer = 0,
 	}
 
 	local function updateBar()
@@ -762,8 +673,6 @@ task.spawn(function()
 			local spawnPos = demonState.spawnCFrame.Position
 			local currentPos = hrp.Position
 			local closestPlayer, dist = findPlayerInRadius(currentPos, AGGRO_RADIUS)
-			local poseThisTick = "idle"
-
 			if closestPlayer then
 				local targetHRP = closestPlayer.Character and closestPlayer.Character:FindFirstChild("HumanoidRootPart")
 				if targetHRP then
@@ -775,6 +684,8 @@ task.spawn(function()
 						if dist > ATTACK_RADIUS then
 							nextPos = currentPos + flatDir.Unit * math.min(MOVE_SPEED * AI_TICK, dist - ATTACK_RADIUS)
 						else
+							-- Each demon targets its own angular slot around the player so they ring out
+							-- instead of all converging to the same point.
 							local spread = ATTACK_RADIUS * 0.65
 							local idealPos = Vector3.new(
 								targetPos.X + math.cos(demonState.sepAngle) * spread,
@@ -799,31 +710,17 @@ task.spawn(function()
 						end
 
 						nextPos = separateNextPos(nextPos, demonState)
-						local lookCFrame = CFrame.lookAt(nextPos, nextPos + flatDir.Unit)
+						local lookCFrame = CFrame.lookAt(nextPos, nextPos + flatDir.Unit) * CFrame.Angles(0, math.pi, 0)
 						demonState.moveCFrame = lookCFrame
-						if (nextPos - currentPos).Magnitude > 0.05 then
-							poseThisTick = "walk"
-						end
 					end
 				end
 
 				demonState.aiState = "attacking"
-				if dist <= ATTACK_RADIUS then
-					poseThisTick = "idle"
-				end
 
 				local now = tick()
 				if dist <= ATTACK_RADIUS and now - demonState.lastAttack >= ATTACK_COOLDOWN and not demonState.isAttacking then
 					demonState.lastAttack = now
 					demonState.isAttacking = true
-					demonState.attackPoseUntil = now + ATTACK_WINDUP + 0.35
-					poseThisTick = "attack"
-
-					local debugMode = false
-					local debugVal = demon:FindFirstChild("DebugHitbox")
-					if debugVal and debugVal:IsA("BoolValue") then
-						debugMode = debugVal.Value
-					end
 
 					if demonState.isBoss and now - demonState.lastSpecial >= BOSS_SPECIAL_COOLDOWN then
 						demonState.lastSpecial = now
@@ -851,6 +748,7 @@ task.spawn(function()
 							demonState.isAttacking = false
 						end)
 					else
+						attackAnimRemote:FireAllClients(demon)
 						spawnDemonAttackVFX(demon)
 
 						task.delay(ATTACK_WINDUP, function()
@@ -858,31 +756,65 @@ task.spawn(function()
 								demonState.isAttacking = false
 								return
 							end
-							CombatModule.processNPCAttack(demon, demonState.stats.damage, debugMode)
+							-- processNPCAttack places its hitbox at hrp.CFrame * CFrame.new(0,0,-3).
+							-- The Snow Demon's HRP is rotated 180° so its -Z faces away from the player,
+							-- putting the hitbox behind the demon. Use a direct radius check instead.
+							local attackPos = hrp.Position
+							for _, player in Players:GetPlayers() do
+								local character = player.Character
+								local playerHRP = character and character:FindFirstChild("HumanoidRootPart")
+								local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+								if playerHRP and humanoid and humanoid.Health > 0 then
+									if (playerHRP.Position - attackPos).Magnitude <= ATTACK_RADIUS and not isSafePosition(playerHRP.Position) then
+										CombatModule.applyDamageFromNPC(character, demonState.stats.damage, demon)
+									end
+								end
+							end
 							demonState.isAttacking = false
 						end)
 					end
 				end
-				if tick() < (demonState.attackPoseUntil or 0) then
-					poseThisTick = "attack"
-				end
-				demonState.currentPose = poseThisTick
 			else
 				local homeDir = spawnPos - currentPos
-				if homeDir.Magnitude > 1 then
+				if homeDir.Magnitude > WANDER_RADIUS + 3 then
+					-- Too far from spawn (leashed away during chase) — head back
 					demonState.aiState = "returning"
 					local flatHome = Vector3.new(homeDir.X, 0, homeDir.Z)
 					if flatHome.Magnitude > 0.1 then
 						local nextPos = separateNextPos(currentPos + flatHome.Unit * math.min(MOVE_SPEED * AI_TICK, homeDir.Magnitude), demonState)
-						demonState.moveCFrame = CFrame.lookAt(nextPos, nextPos + flatHome.Unit)
-						poseThisTick = "walk"
+						demonState.moveCFrame = CFrame.lookAt(nextPos, nextPos + flatHome.Unit) * CFrame.Angles(0, math.pi, 0)
 					end
 				else
+					-- Wander randomly within WANDER_RADIUS of spawn
 					demonState.aiState = "idle"
-					demonState.moveCFrame = demonState.spawnCFrame
-					poseThisTick = "idle"
+					local now = tick()
+					local flatPos = Vector3.new(currentPos.X, 0, currentPos.Z)
+					local wanderFlat = demonState.wanderTarget and Vector3.new(demonState.wanderTarget.X, 0, demonState.wanderTarget.Z)
+					local needNew = not demonState.wanderTarget
+						or (wanderFlat - flatPos).Magnitude < 1.5
+						or now > demonState.wanderTimer
+					if needNew then
+						local angle = math.random() * 2 * math.pi
+						local radius = WANDER_RADIUS * (0.3 + math.random() * 0.7)
+						demonState.wanderTarget = Vector3.new(
+							spawnPos.X + math.cos(angle) * radius,
+							currentPos.Y,
+							spawnPos.Z + math.sin(angle) * radius
+						)
+						demonState.wanderTimer = now + math.random(3, 9)
+					end
+					local wt = demonState.wanderTarget
+					local wanderDir = Vector3.new(wt.X - currentPos.X, 0, wt.Z - currentPos.Z)
+					if wanderDir.Magnitude > 1.5 then
+						-- Point at the FULL target, not a step ahead. The Heartbeat drives
+						-- the actual movement speed via aiState, so the demon walks
+						-- continuously at patrol speed with no stop-start between ticks.
+						local wtAdj = separateNextPos(Vector3.new(wt.X, currentPos.Y, wt.Z), demonState)
+						demonState.moveCFrame = CFrame.lookAt(wtAdj, wtAdj + wanderDir.Unit) * CFrame.Angles(0, math.pi, 0)
+					else
+						demonState.moveCFrame = nil
+					end
 				end
-				demonState.currentPose = poseThisTick
 			end
 		end
 	end
@@ -890,27 +822,22 @@ end)
 
 RunService.Heartbeat:Connect(function(dt)
 	for _, demonState in activeDemons do
-		if not demonState.alive then continue end
+		if not demonState.alive or not demonState.moveCFrame then continue end
 		local demon = demonState.model
 		local hrp = demonState.hrp
 		if not demon.Parent or not hrp.Parent then continue end
 
-		if demonState.moveCFrame then
-			local target = demonState.moveCFrame
-			local dist = (target.Position - hrp.Position).Magnitude
-			if dist >= 0.01 then
-				local step = math.min(MOVE_SPEED * dt, dist)
-				demon:PivotTo(hrp.CFrame:Lerp(target, step / dist))
-			end
-		end
+		local target = demonState.moveCFrame
+		local dist = (target.Position - hrp.Position).Magnitude
+		if dist < 0.01 then continue end
 
-		-- Animate limbs directly every frame after PivotTo so they track HRP without TweenService conflicts.
-		local pose = demonState.currentPose or "idle"
-		if demonState.attackPoseUntil and tick() < demonState.attackPoseUntil then
-			pose = "attack"
-		end
-		animateDemonPose(demonState, pose, dt)
+		local speed = demonState.aiState == "idle" and MOVE_SPEED * WANDER_SPEED_MULT or MOVE_SPEED
+		local step = math.min(speed * dt, dist)
+		-- Only move HRP — Motor6D holds the limbs relative to it.
+		-- Using PivotTo would set all limb CFrames on the server each frame,
+		-- which overrides the client-side Motor6D animation and causes limbs to freeze.
+		hrp.CFrame = hrp.CFrame:Lerp(target, step / dist)
 	end
 end)
 
-print("[DemonSpawner] Loaded - " .. #SPAWN_POSITIONS .. " sentinel demon spawn points active")
+print("[SnowDemonSpawner] Loaded - " .. #SPAWN_POSITIONS .. " Snow Demon spawn points active")
