@@ -1,0 +1,6 @@
+{
+  "name": "DemonBlade2AssetBrush",
+  "tree": {
+    "$path": "src/Plugin/AssetBrush.server.luau"
+  }
+}
