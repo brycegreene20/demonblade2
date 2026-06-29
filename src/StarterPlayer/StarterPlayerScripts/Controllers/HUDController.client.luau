@@ -56,6 +56,13 @@ if not okItemsModule then
 	ItemsModule = nil
 end
 
+local TotalFocusChanged   = Remotes:WaitForChild("TotalFocusChanged")
+local TotalFocusToggle    = Remotes:WaitForChild("TotalFocusToggle")
+local TotalFocusRebirth   = Remotes:WaitForChild("TotalFocusRebirth")
+local SelflessStateChanged = Remotes:WaitForChild("SelflessStateChanged")
+local SelflessStateToggle  = Remotes:WaitForChild("SelflessStateToggle")
+local DodgePointsChanged   = Remotes:WaitForChild("DodgePointsChanged")
+
 local okTitleModule, TitleModule = pcall(require, Modules:WaitForChild("TitleModule", 5))
 if not okTitleModule then
 	warn("[HUDController] TitleModule unavailable; title UI will stay closed")
@@ -2690,6 +2697,10 @@ end
 
 initTitleSelectionUI()
 
+-- Bottom half wrapped in IIFE so the top-level scope stays under Luau's 200-local limit.
+-- All top-level locals above are accessed as upvalues (free; don't count against the limit).
+;(function()
+
 -- ==================== LUNGE COOLDOWN INDICATOR ====================
 local function initLungeCooldownIndicator()
 local lungeFrame = Instance.new("Frame")
@@ -3030,4 +3041,265 @@ end
 
 initMasteryBarSystem()
 
+-- ─── Total Focus & Selfless State panels (bottom-right) ───────────────────
+
+local PANEL_W    = 180
+local PANEL_PAD  = 8
+local PANEL_BG2  = Color3.fromRGB(10, 12, 16)
+local BAR_BG2    = Color3.fromRGB(30, 32, 40)
+
+local function makeAbilityPanel(yFromBottom: number, title: string, accentColor: Color3)
+	local panel = Instance.new("Frame")
+	panel.Size = UDim2.fromOffset(PANEL_W, 72)
+	panel.Position = UDim2.new(1, -(PANEL_W + 20), 1, -(BOTTOM_OFFSET + yFromBottom))
+	panel.AnchorPoint = Vector2.new(0, 1)
+	panel.BackgroundColor3 = PANEL_BG2
+	panel.BackgroundTransparency = 0.3
+	panel.BorderSizePixel = 0
+	panel.Parent = screenGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = panel
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = accentColor
+	stroke.Thickness = 1.2
+	stroke.Transparency = 0.5
+	stroke.Parent = panel
+
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Size = UDim2.new(1, -70, 0, 16)
+	titleLabel.Position = UDim2.fromOffset(PANEL_PAD, PANEL_PAD)
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.TextSize = 9
+	titleLabel.TextColor3 = accentColor
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.Text = title
+	titleLabel.Parent = panel
+
+	local tierLabel = Instance.new("TextLabel")
+	tierLabel.Name = "TierLabel"
+	tierLabel.Size = UDim2.fromOffset(52, 16)
+	tierLabel.Position = UDim2.new(1, -(52 + PANEL_PAD), 0, PANEL_PAD)
+	tierLabel.BackgroundColor3 = accentColor
+	tierLabel.BackgroundTransparency = 0.6
+	tierLabel.BorderSizePixel = 0
+	tierLabel.Font = Enum.Font.GothamBold
+	tierLabel.TextSize = 9
+	tierLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	tierLabel.Text = "V1"
+	tierLabel.Parent = panel
+
+	local tierCorner = Instance.new("UICorner")
+	tierCorner.CornerRadius = UDim.new(0, 4)
+	tierCorner.Parent = tierLabel
+
+	local xpBg = Instance.new("Frame")
+	xpBg.Size = UDim2.new(1, -(PANEL_PAD * 2), 0, 7)
+	xpBg.Position = UDim2.fromOffset(PANEL_PAD, 32)
+	xpBg.BackgroundColor3 = BAR_BG2
+	xpBg.BorderSizePixel = 0
+	xpBg.Parent = panel
+
+	local xpBgCorner = Instance.new("UICorner")
+	xpBgCorner.CornerRadius = UDim.new(0, 3)
+	xpBgCorner.Parent = xpBg
+
+	local xpFillInner = Instance.new("Frame")
+	xpFillInner.Name = "XPFill"
+	xpFillInner.Size = UDim2.fromScale(0, 1)
+	xpFillInner.BackgroundColor3 = accentColor
+	xpFillInner.BorderSizePixel = 0
+	xpFillInner.Parent = xpBg
+
+	local xpFillInnerCorner = Instance.new("UICorner")
+	xpFillInnerCorner.CornerRadius = UDim.new(0, 3)
+	xpFillInnerCorner.Parent = xpFillInner
+
+	local xpText = Instance.new("TextLabel")
+	xpText.Name = "XPText"
+	xpText.Size = UDim2.new(1, -(PANEL_PAD * 2), 0, 12)
+	xpText.Position = UDim2.fromOffset(PANEL_PAD, 42)
+	xpText.BackgroundTransparency = 1
+	xpText.Font = Enum.Font.Gotham
+	xpText.TextSize = 8
+	xpText.TextColor3 = Color3.fromRGB(180, 180, 180)
+	xpText.TextXAlignment = Enum.TextXAlignment.Left
+	xpText.Text = "0 XP"
+	xpText.Parent = panel
+
+	local btn = Instance.new("TextButton")
+	btn.Name = "ToggleBtn"
+	btn.Size = UDim2.new(1, -(PANEL_PAD * 2), 0, 16)
+	btn.Position = UDim2.fromOffset(PANEL_PAD, 52)
+	btn.BackgroundColor3 = accentColor
+	btn.BackgroundTransparency = 0.55
+	btn.BorderSizePixel = 0
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 9
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Text = "ACTIVATE"
+	btn.AutoButtonColor = false
+	btn.Parent = panel
+
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 4)
+	btnCorner.Parent = btn
+
+	btn.MouseEnter:Connect(function()
+		btn.BackgroundTransparency = 0.3
+	end)
+	btn.MouseLeave:Connect(function()
+		btn.BackgroundTransparency = 0.55
+	end)
+
+	return panel, xpFillInner, xpText, btn
+end
+
+-- Total Focus panel
+local tfAccent = Color3.fromRGB(0, 220, 80)
+local tfPanel, tfXpFill, tfXpText, tfBtn = makeAbilityPanel(82, "TOTAL FOCUS", tfAccent)
+local tfTierLabel = tfPanel:FindFirstChild("TierLabel") :: TextLabel
+tfBtn.Text = "ACTIVATE  [J / D-UP]"
+
+local tfRebirthBtn = Instance.new("TextButton")
+tfRebirthBtn.Size = UDim2.fromOffset(PANEL_W - PANEL_PAD * 2, 14)
+tfRebirthBtn.Position = UDim2.fromOffset(PANEL_PAD, -18)
+tfRebirthBtn.BackgroundColor3 = Color3.fromRGB(165, 120, 25)
+tfRebirthBtn.BackgroundTransparency = 0.3
+tfRebirthBtn.BorderSizePixel = 0
+tfRebirthBtn.Font = Enum.Font.GothamBold
+tfRebirthBtn.TextSize = 8
+tfRebirthBtn.TextColor3 = Color3.fromRGB(255, 240, 190)
+tfRebirthBtn.Text = "ASCEND TO CONSTANT"
+tfRebirthBtn.Visible = false
+tfRebirthBtn.Parent = tfPanel
+
+local tfRebirthCorner = Instance.new("UICorner")
+tfRebirthCorner.CornerRadius = UDim.new(0, 4)
+tfRebirthCorner.Parent = tfRebirthBtn
+
+tfBtn.MouseButton1Click:Connect(function()
+	TotalFocusToggle:FireServer()
+end)
+tfRebirthBtn.MouseButton1Click:Connect(function()
+	TotalFocusRebirth:FireServer()
+end)
+
+local TF_TIER_XP = {0, 1000, 10000, 25000, 50000}
+
+TotalFocusChanged.OnClientEvent:Connect(function(state)
+	local tierName  = state.label or state.tierName or "V1"
+	local xp        = state.xp or 0
+	local tierIdx   = state.tierIndex or 1
+	local halo      = state.haloColor or tfAccent
+
+	tfTierLabel.Text = tierName
+	tfTierLabel.BackgroundColor3 = halo
+	tfBtn.BackgroundColor3 = halo
+
+	if tierIdx < 5 then
+		local floor = TF_TIER_XP[tierIdx]
+		local ceil  = TF_TIER_XP[tierIdx + 1]
+		local pct   = math.clamp((xp - floor) / math.max(ceil - floor, 1), 0, 1)
+		TweenService:Create(tfXpFill, TweenInfo.new(0.3), {Size = UDim2.fromScale(pct, 1)}):Play()
+		tfXpText.Text = xp .. " XP  (" .. (ceil - xp) .. " to next)"
+		tfRebirthBtn.Visible = false
+	else
+		TweenService:Create(tfXpFill, TweenInfo.new(0.3), {Size = UDim2.fromScale(1, 1)}):Play()
+		tfXpText.Text = "MAX TIER — READY TO ASCEND"
+		tfRebirthBtn.Visible = true
+	end
+
+	if state.active then
+		tfBtn.Text = "DEACTIVATE  [J / D-UP]"
+		tfBtn.BackgroundTransparency = 0.2
+	else
+		tfBtn.Text = "ACTIVATE  [J / D-UP]"
+		tfBtn.BackgroundTransparency = 0.55
+	end
+end)
+
+-- Selfless State panel
+local ssAccent = Color3.fromRGB(160, 200, 255)
+local ssPanel, ssXpFill, ssXpText, ssBtn = makeAbilityPanel(0, "SELFLESS STATE", ssAccent)
+local ssTierLabel = ssPanel:FindFirstChild("TierLabel") :: TextLabel
+ssBtn.Text = "ACTIVATE  [C / D-DN]"
+
+ssPanel.Size = UDim2.fromOffset(PANEL_W, 86)
+
+local dodgeBg = Instance.new("Frame")
+dodgeBg.Size = UDim2.new(1, -(PANEL_PAD * 2), 0, 6)
+dodgeBg.Position = UDim2.fromOffset(PANEL_PAD, 66)
+dodgeBg.BackgroundColor3 = BAR_BG2
+dodgeBg.BorderSizePixel = 0
+dodgeBg.Parent = ssPanel
+
+local dodgeBgCorner = Instance.new("UICorner")
+dodgeBgCorner.CornerRadius = UDim.new(0, 3)
+dodgeBgCorner.Parent = dodgeBg
+
+local dodgeFill = Instance.new("Frame")
+dodgeFill.Size = UDim2.fromScale(1, 1)
+dodgeFill.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+dodgeFill.BorderSizePixel = 0
+dodgeFill.Parent = dodgeBg
+
+local dodgeFillCorner = Instance.new("UICorner")
+dodgeFillCorner.CornerRadius = UDim.new(0, 3)
+dodgeFillCorner.Parent = dodgeFill
+
+local dodgeLabel = Instance.new("TextLabel")
+dodgeLabel.Size = UDim2.fromOffset(90, 9)
+dodgeLabel.Position = UDim2.fromOffset(PANEL_PAD, 57)
+dodgeLabel.BackgroundTransparency = 1
+dodgeLabel.Font = Enum.Font.Gotham
+dodgeLabel.TextSize = 7
+dodgeLabel.TextColor3 = Color3.fromRGB(140, 180, 220)
+dodgeLabel.TextXAlignment = Enum.TextXAlignment.Left
+dodgeLabel.Text = "DODGE POINTS: 100"
+dodgeLabel.Parent = ssPanel
+
+ssBtn.MouseButton1Click:Connect(function()
+	SelflessStateToggle:FireServer()
+end)
+
+local SS_TIER_XP = {0, 500, 1500, 3000, 5500, 9000, 14000, 20000, 30000, 45000}
+
+SelflessStateChanged.OnClientEvent:Connect(function(state)
+	local tier   = state.tier or 1
+	local xp     = state.xp or 0
+	local active = state.active
+
+	ssTierLabel.Text = "V" .. tostring(tier)
+
+	if tier < 10 then
+		local floor = SS_TIER_XP[tier]
+		local ceil  = SS_TIER_XP[tier + 1]
+		local pct   = math.clamp((xp - floor) / math.max(ceil - floor, 1), 0, 1)
+		TweenService:Create(ssXpFill, TweenInfo.new(0.3), {Size = UDim2.fromScale(pct, 1)}):Play()
+		ssXpText.Text = xp .. " XP  (" .. (ceil - xp) .. " to next)"
+	else
+		TweenService:Create(ssXpFill, TweenInfo.new(0.3), {Size = UDim2.fromScale(1, 1)}):Play()
+		ssXpText.Text = "MAX TIER (V10)"
+	end
+
+	if active then
+		ssBtn.Text = "DEACTIVATE  [C / D-DN]"
+		ssBtn.BackgroundTransparency = 0.2
+	else
+		ssBtn.Text = "ACTIVATE  [C / D-DN]"
+		ssBtn.BackgroundTransparency = 0.55
+	end
+end)
+
+DodgePointsChanged.OnClientEvent:Connect(function(points: number)
+	local pct = math.clamp(points / 100, 0, 1)
+	TweenService:Create(dodgeFill, TweenInfo.new(0.2), {Size = UDim2.fromScale(pct, 1)}):Play()
+	dodgeLabel.Text = "DODGE POINTS: " .. tostring(math.floor(points))
+end)
+
 print("[HUDController] Loaded")
+end)()

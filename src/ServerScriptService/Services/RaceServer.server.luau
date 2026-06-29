@@ -13,6 +13,9 @@ local RaceModule = require(Modules:WaitForChild("RaceModule"))
 local Services = ServerScriptService:WaitForChild("Services")
 local DataStoreModule = require(Services:WaitForChild("DataStoreModule"))
 
+-- Set to false once Robux purchasing is wired up
+local UNLIMITED_SPINS = true
+
 local random = Random.new()
 local regenLoops = {}
 
@@ -51,7 +54,7 @@ SpinRaceRemote.OnServerInvoke = function(player)
 	if not data then
 		return { Success = false, Message = "Player data is not ready" }
 	end
-	if not PlayerDataModule.consumeRaceSpin(player) then
+	if not UNLIMITED_SPINS and not PlayerDataModule.consumeRaceSpin(player) then
 		return {
 			Success = false,
 			Message = "No race spins remaining",

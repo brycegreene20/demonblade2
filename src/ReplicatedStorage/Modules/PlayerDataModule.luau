@@ -57,6 +57,12 @@ PlayerDataModule.DEFAULTS = {
 	EquippedStyle = "",
 	Titles = {},
 	EquippedTitle = "",
+	-- Total Focus
+	TotalFocusXP = 0,
+	TotalFocusRebirths = 0,
+	-- Selfless State
+	SelflessStateXP = 0,
+	SelflessDodgePoints = 100,
 }
 
 local STAT_POINTS_PER_LEVEL = StatConfig.STAT_POINTS_PER_LEVEL
@@ -67,6 +73,8 @@ local SAVE_FIELDS = {
 	"StatPoints", "Faction", "Inventory", "RebirthCount", "SkillsUnlocked",
 	"Mastery", "Bounty", "Race", "RaceSpins", "StatPointsMigrated", "lastRespecTime",
 	"EquippedStyle", "Titles", "EquippedTitle",
+	"TotalFocusXP", "TotalFocusRebirths",
+	"SelflessStateXP", "SelflessDodgePoints",
 }
 
 local playerData = {}
