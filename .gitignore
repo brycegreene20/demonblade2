@@ -1,6 +1,6 @@
 # Rojo build output
 *.rbxl
-!DemonBlade2.rbxl
+!DemonBlade2*.rbxl
 *.rbxlx
 *.rbxm
 !src/**/*.rbxm
