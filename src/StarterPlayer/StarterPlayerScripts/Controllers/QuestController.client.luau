@@ -486,8 +486,134 @@ compassDistanceLabel.Text = ""
 compassDistanceLabel.ZIndex = 7
 compassDistanceLabel.Parent = compassFrame
 
+local compassBillboard = Instance.new("BillboardGui")
+compassBillboard.Name = "QuestCompass3D"
+compassBillboard.Size = UDim2.fromOffset(136, 34)
+compassBillboard.StudsOffsetWorldSpace = Vector3.new(0, 3.55, 0)
+compassBillboard.AlwaysOnTop = true
+compassBillboard.MaxDistance = 250
+compassBillboard.Enabled = false
+compassBillboard.Parent = screenGui
+
+compassFrame.Visible = false
+compassArrow.Size = UDim2.fromOffset(52, 52)
+compassArrow.Position = UDim2.fromScale(0.5, 0)
+compassArrow.AnchorPoint = Vector2.new(0.5, 0)
+compassArrow.Text = ""
+compassArrow.TextSize = 34
+compassArrow.Font = Enum.Font.GothamBlack
+compassArrow.BackgroundTransparency = 0.18
+compassArrow.Visible = false
+compassArrow.Parent = compassBillboard
+
+compassTargetLabel.Size = UDim2.new(1, 0, 0, 16)
+compassTargetLabel.Position = UDim2.fromOffset(0, 0)
+compassTargetLabel.TextXAlignment = Enum.TextXAlignment.Center
+compassTargetLabel.TextStrokeColor3 = SHADOW
+compassTargetLabel.TextStrokeTransparency = 0.3
+compassTargetLabel.Parent = compassBillboard
+
+compassDistanceLabel.Size = UDim2.new(1, 0, 0, 14)
+compassDistanceLabel.Position = UDim2.fromOffset(0, 15)
+compassDistanceLabel.TextXAlignment = Enum.TextXAlignment.Center
+compassDistanceLabel.TextStrokeColor3 = SHADOW
+compassDistanceLabel.TextStrokeTransparency = 0.35
+compassDistanceLabel.Parent = compassBillboard
+
+local compassArrowStroke = Instance.new("UIStroke")
+compassArrowStroke.Color = QUEST_ACTIVE
+compassArrowStroke.Thickness = 2
+compassArrowStroke.Transparency = 0.18
+compassArrowStroke.Parent = compassArrow
+
+local compassWorldModel = Instance.new("Model")
+compassWorldModel.Name = "QuestCompassWorld"
+compassWorldModel.Parent = workspace
+
+local compassWorldParts = {}
+local compassBaseTransparency = {}
+
+local function makeCompassPart(name: string, color: Color3, transparency: number): Part
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.CastShadow = false
+	part.Material = Enum.Material.Neon
+	part.Color = color
+	part.Transparency = 1
+	part.Parent = compassWorldModel
+	table.insert(compassWorldParts, part)
+	compassBaseTransparency[part] = transparency
+	return part
+end
+
+local compassShaft = makeCompassPart("ArrowShaft", QUEST_ACTIVE, 0.08)
+local compassHeadLeft = makeCompassPart("ArrowHeadLeft", QUEST_AVAILABLE, 0)
+local compassHeadRight = makeCompassPart("ArrowHeadRight", QUEST_AVAILABLE, 0)
+local compassRingSegments = {}
+for index = 1, 18 do
+	compassRingSegments[index] = makeCompassPart("DirectionRing" .. index, Color3.fromRGB(60, 170, 255), 0.45)
+end
+
+local function setCompassWorldVisible(isVisible: boolean)
+	for _, part in compassWorldParts do
+		part.Transparency = isVisible and (compassBaseTransparency[part] or 0) or 1
+	end
+end
+
+local function setCompassSegment(part: Part, startPos: Vector3, endPos: Vector3, width: number, thickness: number)
+	local delta = endPos - startPos
+	local length = delta.Magnitude
+	if length < 0.01 then
+		part.Transparency = 1
+		return
+	end
+	part.Size = Vector3.new(width, thickness, length)
+	part.CFrame = CFrame.lookAt(startPos + delta * 0.5, endPos)
+end
+
+local function updateCompassWorld(head: BasePart, direction: Vector3)
+	local basePos = head.Position + Vector3.new(0, 1.55, 0)
+	local right = Vector3.new(-direction.Z, 0, direction.X)
+	if right.Magnitude < 0.01 then
+		right = Vector3.new(1, 0, 0)
+	else
+		right = right.Unit
+	end
+
+	local shaftStart = basePos - direction * 0.35
+	local shaftEnd = basePos + direction * 0.7
+	local headTip = basePos + direction * 1.22
+	local headBase = basePos + direction * 0.7
+
+	setCompassSegment(compassShaft, shaftStart, shaftEnd, 0.16, 0.12)
+	setCompassSegment(compassHeadLeft, headTip, headBase + right * 0.42, 0.18, 0.14)
+	setCompassSegment(compassHeadRight, headTip, headBase - right * 0.42, 0.18, 0.14)
+
+	local radius = 1.28
+	for index, segment in compassRingSegments do
+		local angleA = ((index - 1) / #compassRingSegments) * math.pi * 2
+		local angleB = (index / #compassRingSegments) * math.pi * 2
+		local pointA = basePos + Vector3.new(math.cos(angleA) * radius, -0.08, math.sin(angleA) * radius)
+		local pointB = basePos + Vector3.new(math.cos(angleB) * radius, -0.08, math.sin(angleB) * radius)
+		setCompassSegment(segment, pointA, pointB, 0.045, 0.045)
+	end
+
+	setCompassWorldVisible(true)
+end
+
 local activeQuestTargetType = nil
 local compassTargetModel = nil
+local QUEST_TARGET_LABELS = {
+	TrainingDummy = "TRAINING DUMMY",
+	ForestDemon = "FOREST DEMON",
+	DemonBoss = "DEMON BOSS",
+	SnowDemon = "FROST DEMON",
+	SnowDemonBoss = "FROST BOSS",
+}
 
 local function getEnemyFolder(enemyType)
 	if enemyType == "TrainingDummy" then
@@ -495,6 +621,9 @@ local function getEnemyFolder(enemyType)
 	end
 	if enemyType == "ForestDemon" or enemyType == "DemonBoss" then
 		return workspace:FindFirstChild("ForestDemons")
+	end
+	if enemyType == "SnowDemon" or enemyType == "SnowDemonBoss" then
+		return workspace:FindFirstChild("SnowDemons")
 	end
 	return nil
 end
@@ -526,15 +655,15 @@ end
 local function refreshQuestCompass()
 	if not activeQuestTargetType then
 		compassTargetModel = nil
-		compassFrame.Visible = false
+		compassBillboard.Enabled = false
+		setCompassWorldVisible(false)
 		return
 	end
 
 	compassTargetModel = findNearestQuestTarget(activeQuestTargetType)
-	compassFrame.Visible = true
-	compassArrow.Visible = compassTargetModel ~= nil
-	compassTargetLabel.Text = activeQuestTargetType == "TrainingDummy" and "TRAINING DUMMY"
-		or (activeQuestTargetType == "DemonBoss" and "DEMON BOSS" or "FOREST DEMON")
+	compassBillboard.Enabled = true
+	setCompassWorldVisible(false)
+	compassTargetLabel.Text = QUEST_TARGET_LABELS[activeQuestTargetType] or "QUEST TARGET"
 	if not compassTargetModel then
 		compassDistanceLabel.Text = "Target respawning..."
 	end
@@ -594,38 +723,41 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 
 	if not activeQuestTargetType then
-		compassFrame.Visible = false
+		compassBillboard.Enabled = false
+		setCompassWorldVisible(false)
 		return
 	end
 
 	local character = LocalPlayer.Character
 	local head = character and character:FindFirstChild("Head")
 	local root = character and character:FindFirstChild("HumanoidRootPart")
-	local camera = workspace.CurrentCamera
-	if not head or not root or not camera then
-		compassFrame.Visible = false
+	if not head or not root then
+		compassBillboard.Enabled = false
+		setCompassWorldVisible(false)
 		return
 	end
 
-	local viewportPoint, onScreen = camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2.8, 0))
-	compassFrame.Visible = onScreen
-	if not onScreen then return end
-	compassFrame.Position = UDim2.fromOffset(viewportPoint.X, viewportPoint.Y - 8)
+	compassBillboard.Adornee = head
+	compassBillboard.Enabled = true
 
-	if not compassTargetModel then return end
+	if not compassTargetModel then
+		setCompassWorldVisible(false)
+		return
+	end
 	local targetRoot = compassTargetModel:FindFirstChild("HumanoidRootPart") or compassTargetModel.PrimaryPart
-	if not targetRoot then return end
+	if not targetRoot then
+		setCompassWorldVisible(false)
+		return
+	end
 
 	local offset = targetRoot.Position - root.Position
 	local flatOffset = Vector3.new(offset.X, 0, offset.Z)
-	if flatOffset.Magnitude < 0.01 then return end
+	if flatOffset.Magnitude < 0.01 then
+		setCompassWorldVisible(false)
+		return
+	end
 	local direction = flatOffset.Unit
-	local cameraLook = Vector3.new(camera.CFrame.LookVector.X, 0, camera.CFrame.LookVector.Z)
-	local cameraRight = Vector3.new(camera.CFrame.RightVector.X, 0, camera.CFrame.RightVector.Z)
-	if cameraLook.Magnitude < 0.01 or cameraRight.Magnitude < 0.01 then return end
-
-	local angle = math.atan2(cameraRight.Unit:Dot(direction), cameraLook.Unit:Dot(direction))
-	compassArrow.Rotation = math.deg(angle)
+	updateCompassWorld(head, direction)
 	compassDistanceLabel.Text = tostring(math.floor(offset.Magnitude + 0.5)) .. " studs"
 end)
 

@@ -150,9 +150,10 @@ UseSkillRemote.OnServerEvent:Connect(function(player, skillId)
 	if not humanoid or humanoid.Health <= 0 then return end
 
 	PlayerDataModule.consumeStamina(player, skill.StaminaCost)
-	SkillSystemModule.setCooldown(player, skillId, skill.Cooldown)
+	local cooldown = skill.Cooldown * PlayerDataModule.getAbilityCooldownMultiplier(player)
+	SkillSystemModule.setCooldown(player, skillId, cooldown)
 
-	SkillActivatedRemote:FireClient(player, skillId, skill.Cooldown)
+	SkillActivatedRemote:FireClient(player, skillId, cooldown)
 	for _, otherPlayer in Players:GetPlayers() do
 		if otherPlayer ~= player then
 			SkillActivatedRemote:FireClient(otherPlayer, player, skillId)

@@ -25,6 +25,12 @@ local MULTI_JUMP_STAMINA_COST = 15
 local AIR_JUMP_INPUT_DEBOUNCE = 0.1
 local GROUND_JUMP_GRACE = 0.14
 local MAX_DOWNWARD_ANGLE = math.rad(60)
+local DASH_FORCE_MAX = 22000
+local DASH_COLLISION_BUFFER = 4
+local DASH_WALL_STOP_OFFSET = 3
+local DASH_SWEEP_SIDE_OFFSET = 1.25
+local DASH_SWEEP_UP_OFFSET = 1.4
+local DASH_SWEEP_DOWN_OFFSET = 1.2
 
 local _lastLungeTime = 0
 local isLunging = false
@@ -153,6 +159,116 @@ local function recoverDashPosture(humanoid, hrp)
 		hrp.AssemblyLinearVelocity = Vector3.new(0, math.min(vel.Y, 0), 0)
 	end
 	humanoid:ChangeState(Enum.HumanoidStateType.Running)
+end
+
+local function moveRootPreservingFacing(hrp, position)
+	local look = hrp.CFrame.LookVector
+	local flatLook = Vector3.new(look.X, 0, look.Z)
+	if flatLook.Magnitude < 0.01 then
+		flatLook = Vector3.new(0, 0, -1)
+	end
+	hrp.CFrame = CFrame.lookAt(position, position + flatLook.Unit)
+end
+
+local function getDashSweepOffsets(direction, hrp)
+	local flat = Vector3.new(direction.X, 0, direction.Z)
+	local right
+	if flat.Magnitude > 0.01 then
+		right = flat.Unit:Cross(Vector3.new(0, 1, 0)).Unit
+	else
+		right = hrp.CFrame.RightVector
+	end
+
+	return {
+		Vector3.new(0, 0, 0),
+		Vector3.new(0, DASH_SWEEP_UP_OFFSET, 0),
+		Vector3.new(0, -DASH_SWEEP_DOWN_OFFSET, 0),
+		right * DASH_SWEEP_SIDE_OFFSET,
+		-right * DASH_SWEEP_SIDE_OFFSET,
+	}
+end
+
+local function getBlockingDashHit(previousPosition, direction, speed, dt, hrp, raycastParams)
+	if direction.Magnitude < 0.01 then return nil end
+
+	local dashDirection = direction.Unit
+	local frameTravel = math.max((hrp.Position - previousPosition).Magnitude, speed * dt)
+	local castVector = dashDirection * math.max(2, frameTravel + DASH_COLLISION_BUFFER)
+	for _, offset in getDashSweepOffsets(dashDirection, hrp) do
+		local result = workspace:Raycast(previousPosition + offset, castVector, raycastParams)
+		if result then
+			return result
+		end
+	end
+
+	return nil
+end
+
+local function applyDashForce(character, humanoid, hrp, direction, power, duration)
+	local attachment = hrp:FindFirstChild("RootAttachment")
+	if not attachment then
+		attachment = Instance.new("Attachment")
+		attachment.Name = "RootAttachment"
+		attachment.Parent = hrp
+	end
+
+	local force = Instance.new("LinearVelocity")
+	force.MaxForce = DASH_FORCE_MAX
+	force.VectorVelocity = direction * power
+	force.Attachment0 = attachment
+	force.RelativeTo = Enum.ActuatorRelativeTo.World
+	force.Parent = hrp
+
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.FilterDescendantsInstances = { character }
+	raycastParams.IgnoreWater = true
+	raycastParams.RespectCanCollide = true
+
+	local cleanedUp = false
+	local previousPosition = hrp.Position
+	local stabilizeConn
+
+	local function cleanupDash(blockingHit)
+		if cleanedUp then return end
+		cleanedUp = true
+
+		if stabilizeConn then
+			stabilizeConn:Disconnect()
+			stabilizeConn = nil
+		end
+		if force and force.Parent then
+			force:Destroy()
+		end
+
+		if blockingHit and hrp and hrp.Parent then
+			local stopPosition = blockingHit.Position + blockingHit.Normal * DASH_WALL_STOP_OFFSET
+			moveRootPreservingFacing(hrp, stopPosition)
+			print(("[MovementController] Dash blocked by %s"):format(blockingHit.Instance:GetFullName()))
+		end
+
+		recoverDashPosture(humanoid, hrp)
+	end
+
+	stabilizeConn = RunService.Heartbeat:Connect(function(dt)
+		if not hrp or not hrp.Parent then
+			cleanupDash(nil)
+			return
+		end
+
+		local blockingHit = getBlockingDashHit(previousPosition, direction, power, dt, hrp, raycastParams)
+		if blockingHit then
+			cleanupDash(blockingHit)
+			return
+		end
+
+		hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+		previousPosition = hrp.Position
+	end)
+
+	task.delay(duration, function()
+		cleanupDash(nil)
+	end)
 end
 
 local function spawnLungeVFX(character, _direction)
@@ -325,34 +441,7 @@ local function performGroundLunge()
 	lungeFOVPunch()
 	playLungeAnimation(humanoid)
 
-	local attachment = hrp:FindFirstChild("RootAttachment")
-	if not attachment then
-		attachment = Instance.new("Attachment")
-		attachment.Name = "RootAttachment"
-		attachment.Parent = hrp
-	end
-
-	local force = Instance.new("LinearVelocity")
-	force.MaxForce = 22000
-	force.VectorVelocity = dir * LUNGE_POWER
-	force.Attachment0 = attachment
-	force.RelativeTo = Enum.ActuatorRelativeTo.World
-	force.Parent = hrp
-
-	-- Suppress angular forces from enemy collisions so the character never tips over
-	local stabilizeConn = RunService.Heartbeat:Connect(function()
-		if hrp and hrp.Parent then
-			hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-		end
-	end)
-
-	task.delay(DASH_FORCE_DURATION, function()
-		stabilizeConn:Disconnect()
-		if force and force.Parent then
-			force:Destroy()
-		end
-		recoverDashPosture(humanoid, hrp)
-	end)
+	applyDashForce(character, humanoid, hrp, dir, LUNGE_POWER, DASH_FORCE_DURATION)
 
 	task.delay(LUNGE_COOLDOWN, function()
 		isLunging = false
@@ -384,33 +473,7 @@ local function performAerialDash()
 	spawnAerialDashVFX(character)
 	lungeFOVPunch()
 
-	local attachment = hrp:FindFirstChild("RootAttachment")
-	if not attachment then
-		attachment = Instance.new("Attachment")
-		attachment.Name = "RootAttachment"
-		attachment.Parent = hrp
-	end
-
-	local force = Instance.new("LinearVelocity")
-	force.MaxForce = 22000
-	force.VectorVelocity = dir * aerialPower
-	force.Attachment0 = attachment
-	force.RelativeTo = Enum.ActuatorRelativeTo.World
-	force.Parent = hrp
-
-	local stabilizeConn = RunService.Heartbeat:Connect(function()
-		if hrp and hrp.Parent then
-			hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-		end
-	end)
-
-	task.delay(DASH_FORCE_DURATION, function()
-		stabilizeConn:Disconnect()
-		if force and force.Parent then
-			force:Destroy()
-		end
-		recoverDashPosture(humanoid, hrp)
-	end)
+	applyDashForce(character, humanoid, hrp, dir, aerialPower, DASH_FORCE_DURATION)
 
 	task.delay(AERIAL_COOLDOWN, function()
 		isLunging = false
@@ -440,7 +503,8 @@ local function performAirJump()
 		humanoid.JumpPower,
 		humanoid.JumpHeight,
 		workspace.Gravity,
-		observedGroundJumpVelocity
+		observedGroundJumpVelocity,
+		airJumpsUsed
 	)
 	hrp.AssemblyLinearVelocity = Vector3.new(
 		hrp.AssemblyLinearVelocity.X,

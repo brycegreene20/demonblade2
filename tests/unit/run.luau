@@ -439,7 +439,13 @@ test("quest routing keeps dummies on Urokodaki and demons on Corps Officer", fun
 	end
 	for _, quest in ipairs(officerQuests) do
 		local enemyType = quest.objectives[1].enemyType
-		expectTruthy(enemyType == "ForestDemon" or enemyType == "DemonBoss", quest.id .. " is a demon quest")
+		expectTruthy(
+			enemyType == "ForestDemon"
+				or enemyType == "DemonBoss"
+				or enemyType == "SnowDemon"
+				or enemyType == "SnowDemonBoss",
+			quest.id .. " is a demon quest"
+		)
 	end
 end)
 
@@ -449,6 +455,17 @@ test("Demon Boss quest is routed to the Corps Officer", function()
 	expectEqual(quest.npcId, "QuestNPC_Officer", "Demon Boss quest NPC")
 	expectEqual(quest.objectives[1].enemyType, "DemonBoss", "Demon Boss objective type")
 	expectEqual(quest.repeatable, true, "Demon Boss quest repeatable")
+end)
+
+test("Frost Demon quests are routed to the Corps Officer", function()
+	local regularQuest = QuestDataModule.getQuest("frost_demon_01")
+	local bossQuest = QuestDataModule.getQuest("frost_boss_01")
+	expectTruthy(regularQuest, "Frost Demon quest exists")
+	expectTruthy(bossQuest, "Frost Demon Boss quest exists")
+	expectEqual(regularQuest.npcId, "QuestNPC_Officer", "Frost Demon quest NPC")
+	expectEqual(regularQuest.objectives[1].enemyType, "SnowDemon", "Frost Demon objective type")
+	expectEqual(bossQuest.npcId, "QuestNPC_Officer", "Frost Demon Boss quest NPC")
+	expectEqual(bossQuest.objectives[1].enemyType, "SnowDemonBoss", "Frost Demon Boss objective type")
 end)
 
 test("every quest awards normal, mastery, and title XP", function()
@@ -658,6 +675,18 @@ test("Total Focus and Selfless State use distinct combat XP parameters", functio
 	expectEqual(SelflessStateModule.getXPForEvent("Unknown"), 0, "unknown Selfless event")
 end)
 
+test("Selfless State exposes timed regen cooldown and defense buffs", function()
+	expectEqual(SelflessStateModule.ACTIVE_DURATION, 20, "Selfless active window")
+	expectEqual(SelflessStateModule.COOLDOWN_DURATION, 20, "Selfless reuse cooldown")
+	expectNear(SelflessStateModule.getStaminaRegenMultiplier(1), 1.10, 0.000001, "V1 stamina regen")
+	expectNear(SelflessStateModule.getCooldownMultiplier(1), 0.90, 0.000001, "V1 cooldown multiplier")
+	expectNear(SelflessStateModule.getDefenseBonusForTier(1), 0.10, 0.000001, "V1 defense bonus")
+	expectNear(SelflessStateModule.getStaminaRegenMultiplier(10), 1.55, 0.000001, "V10 stamina regen")
+	expectNear(SelflessStateModule.getCooldownMultiplier(10), 0.45, 0.000001, "V10 cooldown multiplier cap")
+	expectNear(SelflessStateModule.getDefenseBonusForTier(10), 0.55, 0.000001, "V10 defense bonus")
+	expectEqual(SelflessStateModule.MAX_DEFENSE_MULTIPLIER, 0.85, "Selfless defense cap")
+end)
+
 -- ==================== Movement physics ====================
 test("repeat jumps match configured or observed ground launch velocity", function()
 	expectEqual(
@@ -672,6 +701,18 @@ test("repeat jumps match configured or observed ground launch velocity", functio
 		57,
 		"observed ground launch velocity"
 	)
+end)
+
+test("repeat jumps gain height with each follow-up jump", function()
+	local firstJump = MovementPhysicsModule.getRepeatJumpVelocity(true, 50, 7.2, 196.2, 0, 1)
+	local secondJump = MovementPhysicsModule.getRepeatJumpVelocity(true, 50, 7.2, 196.2, 0, 2)
+	local fourthJump = MovementPhysicsModule.getRepeatJumpVelocity(true, 50, 7.2, 196.2, 0, 4)
+	local cappedJump = MovementPhysicsModule.getRepeatJumpVelocity(true, 50, 7.2, 196.2, 0, 20)
+
+	expectTruthy(firstJump > 50, "first repeat jump rises above ground jump")
+	expectTruthy(secondJump > firstJump, "second repeat jump rises higher than first")
+	expectTruthy(fourthJump > secondJump, "fourth repeat jump rises higher than second")
+	expectEqual(cappedJump, 50 * 1.48, "repeat jump boost caps safely")
 end)
 
 -- ==================== Quest compass ====================
@@ -721,6 +762,51 @@ test("snowfield demons are grouped by level and isolated from training dummies",
 	end
 end)
 
+test("safe-zone spawn config is centered inside the safe zone", function()
+	local center = WorldSpawnConfigModule.getSafeZoneCenter()
+	local size = WorldSpawnConfigModule.getSafeZoneSize()
+	expectNear(center.X, 264.982, 0.001, "safe-zone center X")
+	expectNear(center.Y, 46.078, 0.001, "safe-zone center Y")
+	expectNear(center.Z, -140.58, 0.001, "safe-zone center Z")
+	expectTruthy(size.X >= 90 and size.Z >= 90, "safe-zone covers wider starter house area")
+end)
+
+test("starter NPCs stay inside the safe zone and dummies stay outside it", function()
+	local center = WorldSpawnConfigModule.getSafeZoneCenter()
+	local size = WorldSpawnConfigModule.getSafeZoneSize()
+	local halfX = size.X * 0.5
+	local halfZ = size.Z * 0.5
+
+	for _, npcId in ipairs({ "QuestNPC_Elder", "QuestNPC_Officer", "QuestNPC_Scout" }) do
+		local spawn = WorldSpawnConfigModule.getNPCSpawn(npcId)
+		expectTruthy(spawn, npcId .. " spawn config exists")
+		expectTruthy(math.abs(spawn.position.X - center.X) <= halfX, npcId .. " inside safe-zone X")
+		expectTruthy(math.abs(spawn.position.Z - center.Z) <= halfZ, npcId .. " inside safe-zone Z")
+	end
+
+	for _, dummy in ipairs(WorldSpawnConfigModule.getTrainingDummySpawns()) do
+		local insideX = math.abs(dummy.x - center.X) <= halfX
+		local insideZ = math.abs(dummy.z - center.Z) <= halfZ
+		expectEqual(insideX and insideZ, false, "training dummy outside safe zone")
+	end
+end)
+
+test("starter placement coordinates match captured house setup", function()
+	local urokodaki = WorldSpawnConfigModule.getNPCSpawn("QuestNPC_Elder")
+	local officer = WorldSpawnConfigModule.getNPCSpawn("QuestNPC_Officer")
+	local aoi = WorldSpawnConfigModule.getNPCSpawn("QuestNPC_Scout")
+	local dummies = WorldSpawnConfigModule.getTrainingDummySpawns()
+
+	expectNear(urokodaki.position.X, 291.339, 0.001, "Urokodaki X")
+	expectNear(urokodaki.position.Z, -120.274, 0.001, "Urokodaki Z")
+	expectNear(officer.position.X, 275.072, 0.001, "Corps Officer X")
+	expectNear(officer.position.Z, -122.065, 0.001, "Corps Officer Z")
+	expectNear(aoi.position.X, 280.745, 0.001, "Merchant Aoi X")
+	expectNear(aoi.position.Z, -111.636, 0.001, "Merchant Aoi Z")
+	expectNear(dummies[1].x, 275.555, 0.001, "dummy yard origin X")
+	expectNear(dummies[1].z, -27.898, 0.001, "dummy yard origin Z")
+end)
+
 test("Demon Boss has a dedicated travel destination", function()
 	local demons = WorldSpawnConfigModule.getDemonSpawns()
 	local boss = demons[#demons]
@@ -731,6 +817,33 @@ test("Demon Boss has a dedicated travel destination", function()
 			WorldSpawnConfigModule.distanceBetween(boss, demons[index]) >= 120,
 			"boss arena separated from regular demon groups"
 		)
+	end
+end)
+
+test("Frost demons have distinct spawns and a separated boss arena", function()
+	local forestDemons = WorldSpawnConfigModule.getDemonSpawns()
+	local frostDemons = WorldSpawnConfigModule.getFrostDemonSpawns()
+	expectEqual(#frostDemons, 18, "regular frost demons plus boss count")
+
+	local frostBoss = frostDemons[#frostDemons]
+	expectEqual(frostBoss.boss, true, "last frost spawn is boss")
+	expectEqual(frostBoss.zone, "FrostDemonBossArena", "frost boss zone")
+
+	for frostIndex, frost in ipairs(frostDemons) do
+		for forestIndex, forest in ipairs(forestDemons) do
+			if not frost.boss and not forest.boss then
+				expectTruthy(
+					WorldSpawnConfigModule.distanceBetween(frost, forest) >= 80,
+					("frost spawn %d separated from forest spawn %d"):format(frostIndex, forestIndex)
+				)
+			end
+		end
+		if not frost.boss then
+			expectTruthy(
+				WorldSpawnConfigModule.distanceBetween(frostBoss, frost) >= 120,
+				"frost boss arena separated from regular frost groups"
+			)
+		end
 	end
 end)
 

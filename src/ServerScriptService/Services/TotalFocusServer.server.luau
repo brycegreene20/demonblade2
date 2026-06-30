@@ -15,10 +15,14 @@ local TotalFocusRebirth = Remotes:WaitForChild("TotalFocusRebirth")
 
 local STAMINA_DRAIN_INTERVAL = 0.5
 local SPEED_BONUS = 15
+local EXHAUSTION_SLOW_DURATION = 3
+local EXHAUSTION_SPEED_MULTIPLIER = 0.45
+local DEBUG_KILL_XP = false
 
 -- Runtime active state (not persisted)
 local activePlayers: { [Player]: boolean } = {}
 local drainTimers:   { [Player]: number  } = {}
+local exhaustionUntil: { [Player]: number } = {}
 
 local function getData(player: Player)
 	return PlayerDataModule.getData(player)
@@ -42,6 +46,32 @@ local function fireUpdate(player: Player)
 		damageBonus = tier.damageBonus,
 		damageReduction = tier.damageReduction,
 	})
+end
+
+local function getRuntimeWalkSpeed(player: Player, baseSpeed: number): number
+	local speed = baseSpeed
+	if activePlayers[player] then
+		speed += SPEED_BONUS
+	end
+
+	local untilTime = exhaustionUntil[player]
+	if untilTime then
+		if os.clock() < untilTime then
+			speed *= EXHAUSTION_SPEED_MULTIPLIER
+		else
+			exhaustionUntil[player] = nil
+		end
+	end
+
+	return math.max(0, speed)
+end
+
+local function applyWalkSpeed(player: Player)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.WalkSpeed = PlayerDataModule.getEffectiveWalkSpeed(player)
+	end
 end
 
 -- Called by CombatServer when the player kills or is hit while Focus is active
@@ -73,7 +103,7 @@ end
 local function grantEventXP(player: Player, eventName: string)
 	local amount = TotalFocusModule.getXPForEvent(eventName)
 	local granted, xp = grantXP(player, amount)
-	if granted and xp and eventName == "Kill" then
+	if DEBUG_KILL_XP and granted and xp and eventName == "Kill" then
 		print(("[TotalFocusServer] %s gained %d kill XP (%d total)"):format(player.Name, amount, xp))
 	end
 end
@@ -82,17 +112,29 @@ end
 shared.TotalFocusServer = {
 	grantXP = grantXP,
 	grantEventXP = grantEventXP,
+	isActive = function(player: Player): boolean
+		return activePlayers[player] == true
+	end,
+	getRuntimeWalkSpeed = getRuntimeWalkSpeed,
 }
 
-local function deactivate(player: Player)
+local function deactivate(player: Player, exhausted: boolean?)
 	if not activePlayers[player] then return end
 	activePlayers[player] = false
 	drainTimers[player] = nil
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.WalkSpeed = math.max(0, humanoid.WalkSpeed - SPEED_BONUS)
+
+	if exhausted then
+		local expiry = os.clock() + EXHAUSTION_SLOW_DURATION
+		exhaustionUntil[player] = expiry
+		task.delay(EXHAUSTION_SLOW_DURATION, function()
+			if exhaustionUntil[player] == expiry then
+				exhaustionUntil[player] = nil
+				applyWalkSpeed(player)
+			end
+		end)
 	end
+
+	applyWalkSpeed(player)
 	fireUpdate(player)
 end
 
@@ -107,12 +149,9 @@ TotalFocusToggle.OnServerEvent:Connect(function(player: Player)
 		local stamina = data.Stamina or 0
 		if stamina <= 0 then return end
 		activePlayers[player] = true
-		local character = player.Character
-		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			humanoid.WalkSpeed += SPEED_BONUS
-		end
+		exhaustionUntil[player] = nil
 		drainTimers[player] = 0
+		applyWalkSpeed(player)
 		fireUpdate(player)
 	end
 end)
@@ -141,7 +180,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 		if not data then continue end
 
 		if (data.Stamina or 0) <= 0 then
-			deactivate(player)
+			deactivate(player, true)
 			continue
 		end
 
@@ -161,11 +200,13 @@ end)
 Players.PlayerRemoving:Connect(function(player: Player)
 	activePlayers[player] = nil
 	drainTimers[player] = nil
+	exhaustionUntil[player] = nil
 end)
 
 Players.PlayerAdded:Connect(function(player: Player)
 	player.CharacterAdded:Connect(function()
 		activePlayers[player] = false
+		exhaustionUntil[player] = nil
 		fireUpdate(player)
 	end)
 end)

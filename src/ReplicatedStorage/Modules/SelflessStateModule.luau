@@ -4,6 +4,9 @@ local SelflessStateModule = {}
 SelflessStateModule.MAX_TIER = 10
 SelflessStateModule.V1_BONUS  = 0.10  -- 10% base bonus at V1
 SelflessStateModule.TIER_STEP = 0.05  -- +5% per additional tier
+SelflessStateModule.ACTIVE_DURATION = 20
+SelflessStateModule.COOLDOWN_DURATION = 20
+SelflessStateModule.MAX_DEFENSE_MULTIPLIER = 0.85
 
 -- Absolute XP thresholds to reach each tier (floor ≠ roof of previous).
 SelflessStateModule.TIER_XP = {
@@ -48,6 +51,18 @@ end
 function SelflessStateModule.getBonusForTier(tier: number): number
 	local t = math.clamp(tier, 1, SelflessStateModule.MAX_TIER)
 	return SelflessStateModule.V1_BONUS + (t - 1) * SelflessStateModule.TIER_STEP
+end
+
+function SelflessStateModule.getStaminaRegenMultiplier(tier: number): number
+	return 1 + SelflessStateModule.getBonusForTier(tier)
+end
+
+function SelflessStateModule.getCooldownMultiplier(tier: number): number
+	return math.max(0.45, 1 - SelflessStateModule.getBonusForTier(tier))
+end
+
+function SelflessStateModule.getDefenseBonusForTier(tier: number): number
+	return SelflessStateModule.getBonusForTier(tier)
 end
 
 -- XP required to reach the next tier, or nil if already V10.

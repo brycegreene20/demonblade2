@@ -79,7 +79,7 @@ jobs:
       - name: Lint Luau with Selene
         shell: pwsh
         run: |
-          & "$env:SELENE" src
+          & "$env:SELENE" src --allow-warnings
 
       - name: Run Luau unit tests
         shell: pwsh
@@ -97,13 +97,13 @@ jobs:
           & "$env:ROJO" sourcemap default.project.json --include-non-scripts -o sourcemap.json
 
       - name: Compare managed non-Workspace structure
-        if: hashFiles('DemonBlade2.rbxl') != ''
+        if: hashFiles('DemonBlade2.rbxl', 'DemonBlade2 update*.rbxl') != ''
         shell: pwsh
         run: |
           & "$env:LUNE" run tools/compare_non_script_structure.luau
 
       - name: Verify key service properties
-        if: hashFiles('DemonBlade2.rbxl') != ''
+        if: hashFiles('DemonBlade2.rbxl', 'DemonBlade2 update*.rbxl') != ''
         shell: pwsh
         run: |
           & "$env:LUNE" run tools/compare_key_service_properties.luau

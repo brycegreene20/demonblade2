@@ -1,0 +1,6 @@
+{
+  "name": "DemonBlade2CoordinateProbe",
+  "tree": {
+    "$path": "src/Plugin/CoordinateProbe.server.luau"
+  }
+}

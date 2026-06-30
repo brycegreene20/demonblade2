@@ -3042,6 +3042,7 @@ initMasteryBarSystem()
 
 -- ─── Total Focus & Selfless State panels (bottom-right) ───────────────────
 
+do
 local PANEL_W    = 180
 local PANEL_PAD  = 8
 local PANEL_BG2  = Color3.fromRGB(10, 12, 16)
@@ -3225,18 +3226,67 @@ end)
 local ssAccent = Color3.fromRGB(160, 200, 255)
 local ssPanel, ssXpFill, ssXpText, ssBtn = makeAbilityPanel(0, "SELFLESS STATE", ssAccent)
 local ssTierLabel = ssPanel:FindFirstChild("TierLabel") :: TextLabel
+ssPanel.Size = UDim2.fromOffset(PANEL_W, 88)
+ssBtn.Position = UDim2.fromOffset(PANEL_PAD, 68)
 ssBtn.Text = "ACTIVATE  [C / D-DN]"
+
+local ssTimerLabel = Instance.new("TextLabel")
+ssTimerLabel.Name = "StateTimer"
+ssTimerLabel.Size = UDim2.new(1, -(PANEL_PAD * 2), 0, 13)
+ssTimerLabel.Position = UDim2.fromOffset(PANEL_PAD, 55)
+ssTimerLabel.BackgroundTransparency = 1
+ssTimerLabel.Font = Enum.Font.GothamBold
+ssTimerLabel.TextSize = 9
+ssTimerLabel.TextColor3 = Color3.fromRGB(215, 230, 255)
+ssTimerLabel.TextXAlignment = Enum.TextXAlignment.Left
+ssTimerLabel.Text = "READY"
+ssTimerLabel.Parent = ssPanel
 
 ssBtn.MouseButton1Click:Connect(function()
 	SelflessStateToggle:FireServer()
 end)
 
 local SS_TIER_XP = {0, 500, 1500, 3000, 5500, 9000, 14000, 20000, 30000, 45000}
+local ssTimerState = {
+	active = false,
+	activeEndsAt = 0,
+	cooldownEndsAt = 0,
+}
+
+local function formatSelflessSeconds(seconds)
+	return tostring(math.max(0, math.ceil(seconds))) .. "s"
+end
+
+local function updateSelflessTimerUI()
+	local now = os.clock()
+	local activeRemaining = math.max(0, ssTimerState.activeEndsAt - now)
+	local cooldownRemaining = math.max(0, ssTimerState.cooldownEndsAt - now)
+
+	if ssTimerState.active and activeRemaining > 0 then
+		ssTimerLabel.Text = "ACTIVE  " .. formatSelflessSeconds(activeRemaining) .. " LEFT"
+		ssTimerLabel.TextColor3 = Color3.fromRGB(210, 245, 255)
+		ssBtn.Text = "DEACTIVATE  [C / D-DN]"
+		ssBtn.BackgroundTransparency = 0.2
+	elseif cooldownRemaining > 0 then
+		ssTimerState.active = false
+		ssTimerLabel.Text = "COOLDOWN  " .. formatSelflessSeconds(cooldownRemaining)
+		ssTimerLabel.TextColor3 = Color3.fromRGB(255, 205, 135)
+		ssBtn.Text = "WAIT  " .. formatSelflessSeconds(cooldownRemaining)
+		ssBtn.BackgroundTransparency = 0.65
+	else
+		ssTimerState.active = false
+		ssTimerLabel.Text = "READY"
+		ssTimerLabel.TextColor3 = Color3.fromRGB(170, 235, 190)
+		ssBtn.Text = "ACTIVATE  [C / D-DN]"
+		ssBtn.BackgroundTransparency = 0.55
+	end
+end
 
 SelflessStateChanged.OnClientEvent:Connect(function(state)
 	local tier   = state.tier or 1
 	local xp     = state.xp or 0
 	local active = state.active
+	local now = os.clock()
 
 	ssTierLabel.Text = "V" .. tostring(tier)
 
@@ -3251,14 +3301,14 @@ SelflessStateChanged.OnClientEvent:Connect(function(state)
 		ssXpText.Text = "MAX TIER (V10)"
 	end
 
-	if active then
-		ssBtn.Text = "DEACTIVATE  [C / D-DN]"
-		ssBtn.BackgroundTransparency = 0.2
-	else
-		ssBtn.Text = "ACTIVATE  [C / D-DN]"
-		ssBtn.BackgroundTransparency = 0.55
-	end
+	ssTimerState.active = active == true
+	ssTimerState.activeEndsAt = now + math.max(0, tonumber(state.activeRemaining) or 0)
+	ssTimerState.cooldownEndsAt = now + math.max(0, tonumber(state.cooldownRemaining) or 0)
+	updateSelflessTimerUI()
 end)
+
+game:GetService("RunService").Heartbeat:Connect(updateSelflessTimerUI)
+end
 
 print("[HUDController] Loaded")
 end)()

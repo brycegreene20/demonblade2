@@ -1,87 +1,62 @@
 # DemonBlade2
 
-DemonBlade2 is a Roblox experience developed with VS Code, Git, and Rojo. The repository is the source of truth for code and managed assets. The authored snowy `Workspace` remains Studio-owned.
+> An anime-inspired action RPG on Roblox — forge your path through demon-infested lands, master forbidden techniques, and rise from an unknown fighter to an unstoppable force.
 
-## Project Shape
+Drawn from the worlds of **Demon Slayer**, **Jujutsu Kaisen**, **Solo Leveling**, and **Frieren: Beyond Journey's End**, DemonBlade2 blends fast-paced sword combat, supernatural power systems, and a deep progression loop into a single Roblox experience.
 
-- `default.project.json` maps the repo into Roblox services for Rojo.
-- `src/` contains the Roblox DataModel tree used by Rojo.
-- `src/**/*.luau` contains scripts and modules.
-- `src/**/*.model.json` contains simple instances such as remotes and values.
-- `src/**/*.rbxm` contains managed assets such as models, VFX, UI, lighting children, and chat configuration.
-- `tools/` contains repeatable export and verification helpers.
-- `.github/workflows/roblox-ci.yml` validates the code project.
+---
 
-## Codebase Digest
+## What Is DemonBlade2?
 
-Server systems live in `src/ServerScriptService/Services`:
+You start as an ordinary blade in a world overrun by demons. Through combat, mastery, and sheer discipline you unlock ancient techniques and push past the limits of human strength. Every fight builds toward something. Every death teaches you something. Eventually, the demons fear you.
 
-- `CombatServer` handles combat remotes and authoritative hit/combat behavior.
-- `MovementServer` handles server-side movement/lunge behavior.
-- `DemonSpawnerServer`, `NPCSpawnerServer`, and `TrainingDummyServer` create and manage world actors.
-- `QuestServer`, `BountyServer`, and `LeaderboardServer` handle progression and player-facing systems.
-- `SkillServer` connects skill activation to shared skill definitions.
-- `ZoneServer` tracks zone changes.
-- `DataStoreModule` owns player persistence.
+The game pulls from four universes:
 
-Shared modules live in `src/ReplicatedStorage/Modules`:
+- **Demon Slayer** — breathing forms, blade mastery, and the relentless war against demonic corruption
+- **Jujutsu Kaisen** — cursed energy states, techniques that cost something to use, and the razor edge between power and self-destruction
+- **Solo Leveling** — the awakening loop: grind, break limits, awaken again, repeat until nothing can touch you
+- **Frieren: Beyond Journey's End** — patient mastery of forgotten arts and the weight of a long, difficult journey
 
-- `CombatModule` centralizes combat constants and logic helpers.
-- `PlayerDataModule` owns player data defaults and mutation helpers.
-- `QuestDataModule` and `SkillSystemModule` define quest and skill behavior.
-- `StatConfig` contains stat/faction rules.
-- `EnemyAIModule` and `UIController` currently provide shared/stubbed interfaces.
+---
 
-Client controllers live in `src/StarterPlayer/StarterPlayerScripts/Controllers`:
+## Core Features
 
-- `CombatController` handles local combat input, effects, and remote calls.
-- `MovementController` handles local movement/lunge input and state.
-- `HUDController` builds and updates the main HUD.
-- `QuestController` handles quest UI/interactions.
-- `ControllerMapper` tracks input mode for keyboard/gamepad prompts.
+### Combat
+Fast, skill-based melee combat with light attack combos, blocking, guard breaks, and lunges. Land hits, read your opponent, and manage your stamina or lose everything.
 
-Assets are intentionally source-controlled:
+### Power States
+- **Total Focus** — enter a heightened state of concentration that accelerates movement and sharpens every strike. Drains stamina while active. Builds Total Focus XP with each fight, unlocking stronger tiers up to V10.
+- **Selfless State** — a defensive resonance that converts the pain of battle — damage taken and dealt — directly into mastery progression. Ten tiers of increasing power for those willing to endure.
 
-- `src/ReplicatedStorage/Assets`
-- `src/ReplicatedStorage/VFXAssets`
-- `src/ReplicatedStorage/NPCModels`
-- `src/Lighting`
-- `src/TextChatService`
+### The Demon World
+Hunt Forest Demons and Snow Demons across a hand-crafted snowy village and surrounding wilderness. Stronger demons guard deeper zones. A field boss waits at the most dangerous ground.
 
-The snowy terrain, village, trees, and map props stay in the Roblox place's `Workspace`. `default.project.json` deliberately does not map `src/Workspace`.
+### Progression Systems
+- **Mastery Styles** — master your chosen combat style through PvP kills, training, and repeated use
+- **Titles** — earn and equip titles that reflect your power and history
+- **Quests and Bounties** — pursue quest objectives and place or claim PvP bounties on other players
+- **Training Dummies** — sharpen your combos before stepping into the field
 
-## Local Development
+---
 
-Use Rojo to sync the filesystem into a local Roblox Studio session:
+## Developer Setup
+
+This repository is the source of truth for all game code and managed assets. The authored snowy map lives in the Roblox place and is not version-controlled.
 
 ```powershell
 rojo serve default.project.json
 ```
 
-Open the snowy local place first, then connect from the Rojo Studio plugin. Rojo updates managed code without replacing the Studio-owned `Workspace`.
+Open the local place in Studio first, then connect the Rojo plugin. See [docs/DEV_ENVIRONMENT.md](docs/DEV_ENVIRONMENT.md) for full setup, asset import workflow, and verification steps.
 
-See [docs/DEV_ENVIRONMENT.md](docs/DEV_ENVIRONMENT.md) for full setup, Rojo usage, Lemonade/Studio asset import, and verification commands.
-
-## Branch And Deploy Flow
+### Branch Flow
 
 ```text
 feature branch -> pull request -> dev -> validate -> Studio staging publish
 main -> validate -> Studio production publish
 ```
 
-- GitHub Actions validates `dev` and `main`.
-- Publish by opening the correct snowy place in Studio, connecting Rojo, testing, and using **Publish to Roblox**.
-- Direct `rojo upload default.project.json` is disabled because it would publish a complete place without the Studio-owned map.
-
-See [docs/PULL_REQUESTS.md](docs/PULL_REQUESTS.md) for branch naming, PR expectations, checks, and merge rules.
-
-## Bug Tracking
-
-Use GitHub Issues for reproducible bugs and attach Studio Output logs for gameplay, data, inventory, movement, quest, and UI problems. See [docs/BUG_TRACKING.md](docs/BUG_TRACKING.md) for the bug template expectations, labels, and local multiplayer testing steps.
-
-## Required Local Checks
-
-Before accepting major Rojo changes or opening a PR:
+### Required Checks Before PR
 
 ```powershell
 tools\lune\lune.exe run tests\unit\run.luau
@@ -89,11 +64,5 @@ rojo build default.project.json -o build_check.rbxl
 Remove-Item build_check.rbxl
 ```
 
-The expected result is:
-
-```text
-UnitTests: all passing
-Built project to build_check.rbxl
-```
-
-Open Cloud deployment secrets are reserved for a future map-preserving deployment process. They are not used by the current validation-only workflow.
+See [docs/PULL_REQUESTS.md](docs/PULL_REQUESTS.md) for branch naming, PR expectations, and merge rules.
+See [docs/BUG_TRACKING.md](docs/BUG_TRACKING.md) for bug reporting format and Studio Output log requirements.

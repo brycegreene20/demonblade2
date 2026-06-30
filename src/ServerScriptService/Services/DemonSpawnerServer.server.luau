@@ -20,6 +20,8 @@ local MASTERY_KILL_REWARDS = {
 
 local AGGRO_RADIUS = 85
 local ATTACK_RADIUS = 8
+local ATTACK_MOVE_STOP_RADIUS = 4.5
+local ATTACK_ENGAGE_RADIUS = 6.5
 local ATTACK_COOLDOWN = 1.5
 local ATTACK_WINDUP = CombatModule.NPC_ATTACK_WINDUP
 local BOSS_SPECIAL_COOLDOWN = 7
@@ -110,8 +112,12 @@ local function getGroundResult(x, z)
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 	local excluded = { demonsFolder }
 	local dummiesFolder = workspace:FindFirstChild("TrainingDummies")
+	local markersFolder = workspace:FindFirstChild("DemonBlade2Markers")
 	if dummiesFolder then
 		table.insert(excluded, dummiesFolder)
+	end
+	if markersFolder then
+		table.insert(excluded, markersFolder)
 	end
 	for _, player in Players:GetPlayers() do
 		if player.Character then
@@ -121,7 +127,7 @@ local function getGroundResult(x, z)
 	raycastParams.FilterDescendantsInstances = excluded
 	raycastParams.IgnoreWater = true
 	raycastParams.RespectCanCollide = true
-	return workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -650, 0), raycastParams)
+	return workspace:Raycast(Vector3.new(x, 600, z), Vector3.new(0, -1200, 0), raycastParams)
 end
 
 local function hasSpawnClearance(cframe)
@@ -129,8 +135,12 @@ local function hasSpawnClearance(cframe)
 	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
 	local excluded = { demonsFolder }
 	local dummiesFolder = workspace:FindFirstChild("TrainingDummies")
+	local markersFolder = workspace:FindFirstChild("DemonBlade2Markers")
 	if dummiesFolder then
 		table.insert(excluded, dummiesFolder)
+	end
+	if markersFolder then
+		table.insert(excluded, markersFolder)
 	end
 	overlapParams.FilterDescendantsInstances = excluded
 
@@ -148,16 +158,25 @@ local function hasSpawnClearance(cframe)
 end
 
 local function resolveSpawnCFrame(spawnData)
+	local firstGroundCFrame = nil
 	for _, offset in SPAWN_SEARCH_OFFSETS do
 		local x = spawnData.x + offset.X
 		local z = spawnData.z + offset.Y
 		local result = getGroundResult(x, z)
 		if result and result.Normal.Y >= 0.65 then
 			local cframe = CFrame.new(result.Position + Vector3.new(0, DEMON_HALF_HEIGHT, 0))
+			firstGroundCFrame = firstGroundCFrame or cframe
 			if hasSpawnClearance(cframe) then
 				return cframe
 			end
 		end
+	end
+
+	if firstGroundCFrame then
+		warn(("[DemonSpawner] Ground found for %s but clearance was blocked; using grounded fallback"):format(
+			spawnData.zone or "unknown zone"
+		))
+		return firstGroundCFrame
 	end
 
 	warn(("[DemonSpawner] No clear ground found for %s; using configured fallback"):format(
@@ -595,7 +614,7 @@ local function spawnDemon(spawnData)
 	end
 
 	demon.PrimaryPart = hrp
-	local targetHeight = isBoss and 8.5 or 6.29
+	local targetHeight = isBoss and 11.5 or 6.29
 	local rawExtents = demon:GetExtentsSize()
 	if rawExtents.Y > 0 then
 		local ok, scaleErr = pcall(function()
@@ -661,7 +680,8 @@ local function spawnDemon(spawnData)
 	streamAnchor.CFrame = spawnCFrame
 
 	-- Ground-snap: shift the whole model so the lowest visible part's bottom edge
-	-- sits at FALLBACK_Y, handling rigs where HRP is not flush with the feet.
+	-- sits on the terrain found by resolveSpawnCFrame. This must use the resolved
+	-- ground height, not world Y=0.5, otherwise raised snow maps bury the rig.
 	local lowestY = math.huge
 	for _, part in demon:GetDescendants() do
 		if part:IsA("BasePart")
@@ -675,7 +695,8 @@ local function spawnDemon(spawnData)
 		end
 	end
 	if lowestY ~= math.huge then
-		local lift = Vector3.new(0, FALLBACK_Y - lowestY, 0)
+		local targetGroundY = spawnCFrame.Position.Y - DEMON_HALF_HEIGHT
+		local lift = Vector3.new(0, targetGroundY - lowestY, 0)
 		for _, part in demon:GetDescendants() do
 			if part:IsA("BasePart") then
 				part.CFrame = part.CFrame + lift
@@ -862,6 +883,11 @@ local function replaceAuthoredDemonModels()
 		if Players:GetPlayerFromCharacter(model) then
 			continue
 		end
+		-- Other enemy services mark their runtime models with EnemyType.
+		-- Those models are already managed and must not be converted here.
+		if model:GetAttribute("EnemyType") ~= nil then
+			continue
+		end
 
 		local lowerName = string.lower(model.Name)
 		if not string.find(lowerName, "demon", 1, true) then
@@ -937,10 +963,10 @@ task.spawn(function()
 					local flatDir = Vector3.new(direction.X, 0, direction.Z)
 					if flatDir.Magnitude > 0.1 then
 						local nextPos
-						if dist > ATTACK_RADIUS then
-							nextPos = currentPos + flatDir.Unit * math.min(MOVE_SPEED * AI_TICK, dist - ATTACK_RADIUS)
+						if dist > ATTACK_MOVE_STOP_RADIUS then
+							nextPos = currentPos + flatDir.Unit * math.min(MOVE_SPEED * AI_TICK, dist - ATTACK_MOVE_STOP_RADIUS)
 						else
-							local spread = ATTACK_RADIUS * 0.65
+							local spread = ATTACK_MOVE_STOP_RADIUS * 0.75
 							local idealPos = Vector3.new(
 								targetPos.X + math.cos(demonState.sepAngle) * spread,
 								currentPos.Y,
@@ -973,12 +999,12 @@ task.spawn(function()
 				end
 
 				demonState.aiState = "attacking"
-				if dist <= ATTACK_RADIUS then
+				if dist <= ATTACK_ENGAGE_RADIUS then
 					poseThisTick = "idle"
 				end
 
 				local now = tick()
-				if dist <= ATTACK_RADIUS and now - demonState.lastAttack >= ATTACK_COOLDOWN and not demonState.isAttacking then
+				if dist <= ATTACK_ENGAGE_RADIUS and now - demonState.lastAttack >= ATTACK_COOLDOWN and not demonState.isAttacking then
 					demonState.lastAttack = now
 					demonState.isAttacking = true
 					demonState.attackPoseUntil = now + ATTACK_WINDUP + 0.35

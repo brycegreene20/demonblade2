@@ -1,5 +1,8 @@
 local MovementPhysicsModule = {}
 
+MovementPhysicsModule.REPEAT_JUMP_BOOST_PER_JUMP = 0.12
+MovementPhysicsModule.MAX_REPEAT_JUMP_BOOST = 0.48
+
 function MovementPhysicsModule.getConfiguredJumpVelocity(useJumpPower, jumpPower, jumpHeight, gravity)
 	if useJumpPower and (tonumber(jumpPower) or 0) > 0 then
 		return jumpPower
@@ -10,12 +13,22 @@ function MovementPhysicsModule.getConfiguredJumpVelocity(useJumpPower, jumpPower
 	return math.sqrt(2 * safeGravity * safeHeight)
 end
 
+function MovementPhysicsModule.getRepeatJumpMultiplier(jumpIndex)
+	local safeJumpIndex = math.max(0, math.floor(tonumber(jumpIndex) or 0))
+	local boost = math.min(
+		MovementPhysicsModule.MAX_REPEAT_JUMP_BOOST,
+		safeJumpIndex * MovementPhysicsModule.REPEAT_JUMP_BOOST_PER_JUMP
+	)
+	return 1 + boost
+end
+
 function MovementPhysicsModule.getRepeatJumpVelocity(
 	useJumpPower,
 	jumpPower,
 	jumpHeight,
 	gravity,
-	observedGroundVelocity
+	observedGroundVelocity,
+	jumpIndex
 )
 	local configured = MovementPhysicsModule.getConfiguredJumpVelocity(
 		useJumpPower,
@@ -23,7 +36,8 @@ function MovementPhysicsModule.getRepeatJumpVelocity(
 		jumpHeight,
 		gravity
 	)
-	return math.max(configured, tonumber(observedGroundVelocity) or 0)
+	local baseVelocity = math.max(configured, tonumber(observedGroundVelocity) or 0)
+	return baseVelocity * MovementPhysicsModule.getRepeatJumpMultiplier(jumpIndex)
 end
 
 return MovementPhysicsModule

@@ -1,8 +1,61 @@
 local fs = require("@lune/fs")
 local roblox = require("@lune/roblox")
 
-local original = roblox.deserializePlace(fs.readFile("DemonBlade2.rbxl"))
-local built = roblox.deserializePlace(fs.readFile("build_check.rbxl"))
+local function getEntryName(entry): string?
+	if type(entry) == "string" then
+		return entry
+	end
+	return entry.name
+end
+
+local function getPlaceUpdateNumber(path: string): number?
+	local lowerPath = string.lower(path)
+	if lowerPath == "demonblade2.rbxl" then
+		return -1
+	end
+
+	local update = string.match(lowerPath, "^demonblade2 update%s*(%d+)%.rbxl$")
+	return update and tonumber(update) or nil
+end
+
+local function findLatestOriginalPlacePath(): string
+	local bestPath = nil
+	local bestUpdate = -2
+	for _, entry in fs.readDir(".") do
+		local name = getEntryName(entry)
+		local update = name and getPlaceUpdateNumber(name) or nil
+		if update and update > bestUpdate then
+			bestPath = name
+			bestUpdate = update
+		end
+	end
+
+	if not bestPath then
+		error("No original place file found. Expected DemonBlade2.rbxl or DemonBlade2 updateN.rbxl.")
+	end
+	return bestPath
+end
+
+local function readFirstAvailable(paths: { string }): (string, string)
+	for _, path in paths do
+		local ok, contents = pcall(fs.readFile, path)
+		if ok then
+			return contents, path
+		end
+	end
+	error("None of these files could be read: " .. table.concat(paths, ", "))
+end
+
+local originalPath = findLatestOriginalPlacePath()
+local originalBytes = fs.readFile(originalPath)
+local builtBytes, builtPath = readFirstAvailable({
+	"build_check.rbxl",
+})
+
+local original = roblox.deserializePlace(originalBytes)
+local built = roblox.deserializePlace(builtBytes)
+print("Original place: " .. originalPath)
+print("Built place: " .. builtPath)
 
 local serviceNames = {
 	"ReplicatedFirst",
