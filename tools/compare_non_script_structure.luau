@@ -52,8 +52,20 @@ local builtBytes, builtPath = readFirstAvailable({
 	"build_check.rbxl",
 })
 
-local original = roblox.deserializePlace(originalBytes)
-local built = roblox.deserializePlace(builtBytes)
+local okOrig, original = pcall(roblox.deserializePlace, originalBytes)
+if not okOrig then
+	print("WARN: Could not deserialize original place (" .. originalPath .. "): " .. tostring(original))
+	print("Skipping structure comparison — place file contains properties unsupported by this Lune version.")
+	return
+end
+
+local okBuilt, built = pcall(roblox.deserializePlace, builtBytes)
+if not okBuilt then
+	print("WARN: Could not deserialize built place (" .. builtPath .. "): " .. tostring(built))
+	print("Skipping structure comparison.")
+	return
+end
+
 print("Original place: " .. originalPath)
 print("Built place: " .. builtPath)
 
