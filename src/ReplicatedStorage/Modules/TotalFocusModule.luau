@@ -12,6 +12,16 @@ TotalFocusModule.TIERS = {
 }
 
 TotalFocusModule.MAX_TIER_INDEX = #TotalFocusModule.TIERS
+local XP_BY_EVENT: { [string]: number } = {
+	DamageDealt = 2,
+	DamageTaken = 1,
+	Kill = 15,
+}
+TotalFocusModule.XP_BY_EVENT = XP_BY_EVENT
+
+function TotalFocusModule.getXPForEvent(eventName: string): number
+	return XP_BY_EVENT[eventName] or 0
+end
 
 -- Returns 1-based tier index from total accumulated XP.
 function TotalFocusModule.getTierIndex(xp: number): number

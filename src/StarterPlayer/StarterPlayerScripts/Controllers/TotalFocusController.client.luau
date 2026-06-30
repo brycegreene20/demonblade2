@@ -48,13 +48,13 @@ local function spawnHalo(color: Color3)
 	halo.Material = Enum.Material.Neon
 	halo.Color = color
 	halo.Transparency = 0.35
+	halo.CFrame = hrp.CFrame * CFrame.Angles(0, 0, math.rad(90))
 	halo.Parent = char
 
 	local weld = Instance.new("WeldConstraint")
 	weld.Part0 = hrp
 	weld.Part1 = halo
 	weld.Parent = halo
-	halo.CFrame = hrp.CFrame * CFrame.new(0, 0, 0) * CFrame.Angles(0, 0, math.rad(90))
 
 	-- Pulse transparency
 	local function pulse()

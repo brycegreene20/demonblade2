@@ -8,6 +8,7 @@ local DummyTemplate = NPCModels:WaitForChild("TrainingDummy")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
 local CombatModule = require(Modules:WaitForChild("CombatModule"))
+local WorldSpawnConfigModule = require(Modules:WaitForChild("WorldSpawnConfigModule"))
 
 local DUMMY_HP = 500
 local DUMMY_XP_REWARD = 25
@@ -28,22 +29,9 @@ local function debugRewardLog(message)
 	end
 end
 
-local GRID_ORIGIN_X = 30
-local GRID_ORIGIN_Z = 28
-local GRID_COLS = 4
-local GRID_ROWS = 3
-local GRID_SPACING = 8
-local FALLBACK_Y = 0.5
 local MODEL_HALF_HEIGHT = 3
-
-local SPAWN_POSITIONS = {}
-for row = 0, GRID_ROWS - 1 do
-	for col = 0, GRID_COLS - 1 do
-		local x = GRID_ORIGIN_X + col * GRID_SPACING
-		local z = GRID_ORIGIN_Z + row * GRID_SPACING
-		table.insert(SPAWN_POSITIONS, CFrame.new(x, FALLBACK_Y + MODEL_HALF_HEIGHT, z))
-	end
-end
+local MARKERS_FOLDER_NAME = "DemonBlade2Markers"
+local DUMMY_YARD_MARKER_NAME = "TrainingDummyYard"
 
 local BAR_WIDTH = 4
 local BAR_HEIGHT = 0.4
@@ -56,6 +44,135 @@ local HP_BG_COLOR = Color3.fromRGB(40, 40, 40)
 local dummiesFolder = Instance.new("Folder")
 dummiesFolder.Name = "TrainingDummies"
 dummiesFolder.Parent = workspace
+
+local function getMarkerPart(markerName)
+	local markersFolder = workspace:FindFirstChild(MARKERS_FOLDER_NAME)
+	if not markersFolder then
+		return nil
+	end
+
+	local marker = markersFolder:FindFirstChild(markerName)
+	if marker and marker:IsA("BasePart") then
+		return marker
+	end
+	return nil
+end
+
+local function getMarkerAttributeNumber(marker, attributeName, fallback)
+	local value = marker:GetAttribute(attributeName)
+	return type(value) == "number" and value or fallback
+end
+
+local function getRawSpawns()
+	local marker = getMarkerPart(DUMMY_YARD_MARKER_NAME)
+	if marker then
+		local grid = WorldSpawnConfigModule.DUMMY_GRID
+		local columns = math.max(1, math.floor(getMarkerAttributeNumber(marker, "Columns", grid.columns)))
+		local rows = math.max(1, math.floor(getMarkerAttributeNumber(marker, "Rows", grid.rows)))
+		local spacing = math.max(5, getMarkerAttributeNumber(marker, "Spacing", grid.spacing))
+		local startX = marker.Position.X - ((columns - 1) * spacing) * 0.5
+		local startZ = marker.Position.Z - ((rows - 1) * spacing) * 0.5
+		local spawns = {}
+
+		for row = 0, rows - 1 do
+			for column = 0, columns - 1 do
+				table.insert(spawns, {
+					x = startX + column * spacing,
+					z = startZ + row * spacing,
+				})
+			end
+		end
+		print(("[TrainingDummyServer] Using %s marker for %d dummy spawn(s)"):format(
+			DUMMY_YARD_MARKER_NAME,
+			#spawns
+		))
+		return spawns
+	end
+
+	return WorldSpawnConfigModule.getTrainingDummySpawns()
+end
+
+local RAW_SPAWNS = getRawSpawns()
+
+local SPAWN_SEARCH_OFFSETS = {
+	Vector2.new(0, 0),
+	Vector2.new(6, 0),
+	Vector2.new(-6, 0),
+	Vector2.new(0, 6),
+	Vector2.new(0, -6),
+	Vector2.new(8, 8),
+	Vector2.new(-8, 8),
+	Vector2.new(8, -8),
+	Vector2.new(-8, -8),
+}
+
+local function getGroundResult(x, z)
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	local excluded = { dummiesFolder }
+	local markersFolder = workspace:FindFirstChild(MARKERS_FOLDER_NAME)
+	if markersFolder then
+		table.insert(excluded, markersFolder)
+	end
+	raycastParams.FilterDescendantsInstances = excluded
+	raycastParams.IgnoreWater = true
+	raycastParams.RespectCanCollide = true
+
+	return workspace:Raycast(Vector3.new(x, 350, z), Vector3.new(0, -800, 0), raycastParams)
+end
+
+local function hasSpawnClearance(cframe)
+	local overlapParams = OverlapParams.new()
+	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+	local excluded = { dummiesFolder }
+	local markersFolder = workspace:FindFirstChild(MARKERS_FOLDER_NAME)
+	if markersFolder then
+		table.insert(excluded, markersFolder)
+	end
+	overlapParams.FilterDescendantsInstances = excluded
+
+	local parts = workspace:GetPartBoundsInBox(
+		cframe * CFrame.new(0, 0.5, 0),
+		Vector3.new(5, 5, 5),
+		overlapParams
+	)
+	for _, part in parts do
+		if part.CanCollide then
+			return false
+		end
+	end
+	return true
+end
+
+local function resolveSpawnCFrame(spawn)
+	local firstGroundCFrame = nil
+	for _, offset in SPAWN_SEARCH_OFFSETS do
+		local x = spawn.x + offset.X
+		local z = spawn.z + offset.Y
+		local result = getGroundResult(x, z)
+		if result and result.Normal.Y >= 0.65 then
+			local cframe = CFrame.new(result.Position + Vector3.new(0, MODEL_HALF_HEIGHT, 0))
+			firstGroundCFrame = firstGroundCFrame or cframe
+			if hasSpawnClearance(cframe) then
+				return cframe
+			end
+		end
+	end
+
+	if firstGroundCFrame then
+		warn(("[TrainingDummyServer] Ground found for dummy at %.1f, %.1f but clearance was blocked; using grounded fallback"):format(
+			spawn.x,
+			spawn.z
+		))
+		return firstGroundCFrame
+	end
+
+	warn(("[TrainingDummyServer] No clear ground found for dummy at %.1f, %.1f; using configured fallback"):format(
+		spawn.x,
+		spawn.z
+	))
+	return CFrame.new(spawn.x, MODEL_HALF_HEIGHT, spawn.z)
+end
 
 local function getHPColor(ratio)
 	if ratio > 0.5 then
@@ -240,6 +357,7 @@ local function spawnDummy(spawnCFrame)
 		if lastAttackerId then
 			local attacker = Players:GetPlayerByUserId(lastAttackerId)
 			if attacker then
+				CombatModule.grantStateProgressionEvent(attacker, "Kill")
 				local rewardPlayers = CombatModule.getRewardPlayers(dummy, attacker, 120)
 				for _, rewardedPlayer in rewardPlayers do
 					PlayerDataModule.addXP(rewardedPlayer, DUMMY_XP_REWARD)
@@ -298,8 +416,8 @@ local function spawnDummy(spawnCFrame)
 	return dummy
 end
 
-for _, cframe in SPAWN_POSITIONS do
-	spawnDummy(cframe)
+for _, spawn in RAW_SPAWNS do
+	spawnDummy(resolveSpawnCFrame(spawn))
 end
 
-print("[TrainingDummyServer] Loaded - " .. #SPAWN_POSITIONS .. " dummy(s) spawned")
+print("[TrainingDummyServer] Loaded - " .. #RAW_SPAWNS .. " dummy(s) spawned")

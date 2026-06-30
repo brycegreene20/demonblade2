@@ -61,7 +61,7 @@ Players.PlayerAdded:Connect(function(player)
 					humanoid.MaxHealth = data.MaxHP
 					humanoid.Health = data.MaxHP
 					data._syncingHealth = false
-					humanoid.WalkSpeed = data.WalkSpeed
+					humanoid.WalkSpeed = PlayerDataModule.getEffectiveWalkSpeed(player)
 				end
 			end
 

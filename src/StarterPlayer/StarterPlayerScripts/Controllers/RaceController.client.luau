@@ -243,11 +243,12 @@ local function updateRace(data)
 	raceName.TextColor3 = color
 	rarity.Text = string.upper(data.Rarity or "Common")
 	buffText.Text = data.Description or ""
-	spinsLabel.Text = "SPINS  " .. tostring(data.Spins or 0)
-	spinButton.BackgroundColor3 = (data.Spins or 0) > 0
+	local canSpin = data.UnlimitedSpins == true or (data.Spins or 0) > 0
+	spinsLabel.Text = data.UnlimitedSpins == true and "UNLIMITED" or ("SPINS  " .. tostring(data.Spins or 0))
+	spinButton.BackgroundColor3 = canSpin
 		and Color3.fromRGB(190, 130, 35)
 		or Color3.fromRGB(65, 68, 76)
-	spinButton.Text = (data.Spins or 0) > 0 and "SPIN - 1" or "NO SPINS"
+	spinButton.Text = canSpin and (data.UnlimitedSpins == true and "SPIN" or "SPIN - 1") or "NO SPINS"
 end
 
 local function setPanelOpen(open)
@@ -274,7 +275,7 @@ overlay.Activated:Connect(function()
 end)
 
 spinButton.Activated:Connect(function()
-	if rolling or (currentRace.Spins or 0) <= 0 then return end
+	if rolling or (currentRace.UnlimitedSpins ~= true and (currentRace.Spins or 0) <= 0) then return end
 	rolling = true
 	spinButton.Text = "ROLLING..."
 	status.Text = ""

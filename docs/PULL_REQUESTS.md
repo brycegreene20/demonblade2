@@ -7,7 +7,7 @@ This guide explains how developers should branch, test, open PRs, and merge chan
 Use this flow:
 
 ```text
-feature branch -> PR -> dev -> staging deploy -> main -> production deploy
+feature branch -> PR -> dev -> Studio staging publish -> main -> Studio production publish
 ```
 
 Recommended branch names:
@@ -55,29 +55,25 @@ Avoid mixing unrelated code, assets, formatting, and pipeline changes in one PR.
 Before opening a PR, run:
 
 ```powershell
+tools\lune\lune.exe run tests\unit\run.luau
 rojo build default.project.json -o build_check.rbxl
-tools\lune\lune.exe run tools\compare_full_structure.luau
-tools\lune\lune.exe run tools\compare_key_service_properties.luau
 Remove-Item build_check.rbxl
 ```
 
 Expected result:
 
 ```text
-Missing from build: 0
-Extra in build: 0
-Class changes: 0
-Key service property mismatches: 0
+UnitTests: all passing
+Built project to build_check.rbxl
 ```
 
 If you changed Studio assets or used Lemonade, also run:
 
 ```powershell
 tools\lune\lune.exe run tools\export_non_scripts_from_rbxl.luau
-tools\lune\lune.exe run tools\export_workspace_duplicate_scripts.luau
 ```
 
-Then rerun the verification checks.
+Do not export or map the snowy `Workspace`; it remains Studio-owned.
 
 ## CI Checks
 
@@ -91,9 +87,7 @@ The workflow:
 - lints Luau with Selene,
 - builds the Rojo project,
 - generates a sourcemap,
-- verifies non-script structure,
-- verifies full structure,
-- verifies important service properties,
+- checks managed non-Workspace structure,
 - uploads a build artifact.
 
 Do not merge a PR while CI is failing.
@@ -107,9 +101,8 @@ Use this structure:
 Briefly describe the change.
 
 ## Testing
+- [ ] Ran `tools\lune\lune.exe run tests\unit\run.luau`
 - [ ] Ran `rojo build default.project.json -o build_check.rbxl`
-- [ ] Ran `tools\lune\lune.exe run tools\compare_full_structure.luau`
-- [ ] Ran `tools\lune\lune.exe run tools\compare_key_service_properties.luau`
 - [ ] Tested locally in Roblox Studio through Rojo
 
 ## Studio / Asset Changes
@@ -140,18 +133,19 @@ For server or data changes, be extra careful around:
 
 ## Merging To Dev
 
-When a PR merges to `dev`, GitHub Actions deploys to:
+When a PR merges to `dev`, GitHub Actions validates the code. Then publish it to:
 
 ```text
 Staging Env - Demon Blade 2
 ```
 
-After staging deploys:
+Staging publish flow:
 
-1. Open the staging Roblox experience.
-2. Smoke test the changed feature.
-3. Watch the Output window for runtime errors.
-4. Confirm core loops still work: spawn, HUD, movement, combat, quests, enemies.
+1. Open the existing snowy staging experience in Studio.
+2. Run `rojo serve default.project.json` and connect Rojo.
+3. Confirm the snowy `Workspace` is unchanged.
+4. Smoke test the changed feature and watch Output.
+5. Use **Publish to Roblox** for the staging place.
 
 ## Promoting To Main
 
@@ -161,13 +155,14 @@ After staging is good:
 2. Confirm CI passes.
 3. Get review/approval.
 4. Merge to `main`.
-5. GitHub deploys to:
+5. Open the existing snowy production experience in Studio.
+6. Connect Rojo, verify the map, run the production smoke test, and publish to:
 
 ```text
 Demon Blade 2 Publish
 ```
 
-Production should use GitHub Environment approval so publishing requires an explicit human approval step.
+Do not run `rojo upload default.project.json`; it does not contain the Studio-owned `Workspace`.
 
 ## Handling Conflicts
 
@@ -188,7 +183,8 @@ For `default.project.json` conflicts:
 1. Preserve service mappings.
 2. Preserve `$properties` that protect Studio parity.
 3. Preserve `$ignoreUnknownInstances` on visual-only/runtime services.
-4. Rerun full structure and property checks.
+4. Keep `Workspace` Studio-owned with no Rojo `$path`.
+5. Rerun unit tests and the Rojo build.
 
 ## What Not To Commit
 

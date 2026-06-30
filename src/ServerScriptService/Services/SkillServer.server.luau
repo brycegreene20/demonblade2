@@ -92,11 +92,15 @@ local function applySkillDamage(player, skill, hitIndex)
 				end
 			end
 
+			-- Record attribution first so a lethal ability hit cannot outrun the death handler.
+			CombatModule.recordPlayerDamage(target, player, finalDmg)
+
 			humanoid:TakeDamage(finalDmg)
 			appliedHitCount += 1
-
-			target:SetAttribute("LastAttacker", player.UserId)
-			CombatModule.recordDamageContribution(target, player, finalDmg)
+			CombatModule.grantStateProgressionEvent(player, "DamageDealt")
+			if targetPlayer then
+				CombatModule.grantStateProgressionEvent(targetPlayer, "DamageTaken")
+			end
 
 			local targetHRP = target:FindFirstChild("HumanoidRootPart")
 			local hitPos = targetHRP and targetHRP.Position or Vector3.zero
@@ -146,9 +150,10 @@ UseSkillRemote.OnServerEvent:Connect(function(player, skillId)
 	if not humanoid or humanoid.Health <= 0 then return end
 
 	PlayerDataModule.consumeStamina(player, skill.StaminaCost)
-	SkillSystemModule.setCooldown(player, skillId, skill.Cooldown)
+	local cooldown = skill.Cooldown * PlayerDataModule.getAbilityCooldownMultiplier(player)
+	SkillSystemModule.setCooldown(player, skillId, cooldown)
 
-	SkillActivatedRemote:FireClient(player, skillId, skill.Cooldown)
+	SkillActivatedRemote:FireClient(player, skillId, cooldown)
 	for _, otherPlayer in Players:GetPlayers() do
 		if otherPlayer ~= player then
 			SkillActivatedRemote:FireClient(otherPlayer, player, skillId)

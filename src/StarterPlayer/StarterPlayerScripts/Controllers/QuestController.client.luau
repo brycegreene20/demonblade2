@@ -3,6 +3,7 @@ local TweenService = game:GetService("TweenService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -13,6 +14,7 @@ local QuestUpdatedRemote = Remotes:WaitForChild("QuestUpdated")
 local QuestCompletedRemote = Remotes:WaitForChild("QuestCompleted")
 local GetAvailableQuestsRemote = Remotes:WaitForChild("GetAvailableQuests")
 local QuestCompletedToastRemote = Remotes:WaitForChild("QuestCompletedToast")
+local QuestTargetModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("QuestTargetModule"))
 
 local TWEEN_FAST = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_BOUNCE = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
@@ -417,14 +419,268 @@ trackerProgress.Text = ""
 trackerProgress.ZIndex = 7
 trackerProgress.Parent = trackerFrame
 
+local compassFrame = Instance.new("Frame")
+compassFrame.Name = "QuestCompass"
+compassFrame.Size = UDim2.fromOffset(176, 50)
+compassFrame.Position = UDim2.fromScale(0.5, 0.5)
+compassFrame.AnchorPoint = Vector2.new(0.5, 1)
+compassFrame.BackgroundColor3 = TRACKER_BG
+compassFrame.BackgroundTransparency = 0.25
+compassFrame.BorderSizePixel = 0
+compassFrame.Visible = false
+compassFrame.ZIndex = 6
+compassFrame.Parent = screenGui
+
+local compassCorner = Instance.new("UICorner")
+compassCorner.CornerRadius = UDim.new(0, 8)
+compassCorner.Parent = compassFrame
+
+local compassStroke = Instance.new("UIStroke")
+compassStroke.Color = QUEST_ACTIVE
+compassStroke.Thickness = 1
+compassStroke.Transparency = 0.35
+compassStroke.Parent = compassFrame
+
+local compassArrow = Instance.new("TextLabel")
+compassArrow.Name = "Arrow"
+compassArrow.Size = UDim2.fromOffset(40, 40)
+compassArrow.Position = UDim2.fromOffset(7, 5)
+compassArrow.BackgroundColor3 = Color3.fromRGB(24, 30, 42)
+compassArrow.BackgroundTransparency = 0.15
+compassArrow.Font = Enum.Font.GothamBold
+compassArrow.TextSize = 32
+compassArrow.TextColor3 = QUEST_AVAILABLE
+compassArrow.TextStrokeColor3 = SHADOW
+compassArrow.TextStrokeTransparency = 0.35
+compassArrow.Text = "↑"
+compassArrow.ZIndex = 7
+compassArrow.Parent = compassFrame
+
+local compassArrowCorner = Instance.new("UICorner")
+compassArrowCorner.CornerRadius = UDim.new(1, 0)
+compassArrowCorner.Parent = compassArrow
+
+local compassTargetLabel = Instance.new("TextLabel")
+compassTargetLabel.Name = "Target"
+compassTargetLabel.Size = UDim2.new(1, -56, 0, 21)
+compassTargetLabel.Position = UDim2.fromOffset(52, 5)
+compassTargetLabel.BackgroundTransparency = 1
+compassTargetLabel.Font = Enum.Font.GothamBold
+compassTargetLabel.TextSize = 12
+compassTargetLabel.TextColor3 = TEXT_COLOR
+compassTargetLabel.TextXAlignment = Enum.TextXAlignment.Left
+compassTargetLabel.Text = "QUEST TARGET"
+compassTargetLabel.ZIndex = 7
+compassTargetLabel.Parent = compassFrame
+
+local compassDistanceLabel = Instance.new("TextLabel")
+compassDistanceLabel.Name = "Distance"
+compassDistanceLabel.Size = UDim2.new(1, -56, 0, 18)
+compassDistanceLabel.Position = UDim2.fromOffset(52, 27)
+compassDistanceLabel.BackgroundTransparency = 1
+compassDistanceLabel.Font = Enum.Font.GothamMedium
+compassDistanceLabel.TextSize = 11
+compassDistanceLabel.TextColor3 = TEXT_DIM
+compassDistanceLabel.TextXAlignment = Enum.TextXAlignment.Left
+compassDistanceLabel.Text = ""
+compassDistanceLabel.ZIndex = 7
+compassDistanceLabel.Parent = compassFrame
+
+local compassBillboard = Instance.new("BillboardGui")
+compassBillboard.Name = "QuestCompass3D"
+compassBillboard.Size = UDim2.fromOffset(136, 34)
+compassBillboard.StudsOffsetWorldSpace = Vector3.new(0, 3.55, 0)
+compassBillboard.AlwaysOnTop = true
+compassBillboard.MaxDistance = 250
+compassBillboard.Enabled = false
+compassBillboard.Parent = screenGui
+
+compassFrame.Visible = false
+compassArrow.Size = UDim2.fromOffset(52, 52)
+compassArrow.Position = UDim2.fromScale(0.5, 0)
+compassArrow.AnchorPoint = Vector2.new(0.5, 0)
+compassArrow.Text = ""
+compassArrow.TextSize = 34
+compassArrow.Font = Enum.Font.GothamBlack
+compassArrow.BackgroundTransparency = 0.18
+compassArrow.Visible = false
+compassArrow.Parent = compassBillboard
+
+compassTargetLabel.Size = UDim2.new(1, 0, 0, 16)
+compassTargetLabel.Position = UDim2.fromOffset(0, 0)
+compassTargetLabel.TextXAlignment = Enum.TextXAlignment.Center
+compassTargetLabel.TextStrokeColor3 = SHADOW
+compassTargetLabel.TextStrokeTransparency = 0.3
+compassTargetLabel.Parent = compassBillboard
+
+compassDistanceLabel.Size = UDim2.new(1, 0, 0, 14)
+compassDistanceLabel.Position = UDim2.fromOffset(0, 15)
+compassDistanceLabel.TextXAlignment = Enum.TextXAlignment.Center
+compassDistanceLabel.TextStrokeColor3 = SHADOW
+compassDistanceLabel.TextStrokeTransparency = 0.35
+compassDistanceLabel.Parent = compassBillboard
+
+local compassArrowStroke = Instance.new("UIStroke")
+compassArrowStroke.Color = QUEST_ACTIVE
+compassArrowStroke.Thickness = 2
+compassArrowStroke.Transparency = 0.18
+compassArrowStroke.Parent = compassArrow
+
+local compassWorldModel = Instance.new("Model")
+compassWorldModel.Name = "QuestCompassWorld"
+compassWorldModel.Parent = workspace
+
+local compassWorldParts = {}
+local compassBaseTransparency = {}
+
+local function makeCompassPart(name: string, color: Color3, transparency: number): Part
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.CastShadow = false
+	part.Material = Enum.Material.Neon
+	part.Color = color
+	part.Transparency = 1
+	part.Parent = compassWorldModel
+	table.insert(compassWorldParts, part)
+	compassBaseTransparency[part] = transparency
+	return part
+end
+
+local compassShaft = makeCompassPart("ArrowShaft", QUEST_ACTIVE, 0.08)
+local compassHeadLeft = makeCompassPart("ArrowHeadLeft", QUEST_AVAILABLE, 0)
+local compassHeadRight = makeCompassPart("ArrowHeadRight", QUEST_AVAILABLE, 0)
+local compassRingSegments = {}
+for index = 1, 18 do
+	compassRingSegments[index] = makeCompassPart("DirectionRing" .. index, Color3.fromRGB(60, 170, 255), 0.45)
+end
+
+local function setCompassWorldVisible(isVisible: boolean)
+	for _, part in compassWorldParts do
+		part.Transparency = isVisible and (compassBaseTransparency[part] or 0) or 1
+	end
+end
+
+local function setCompassSegment(part: Part, startPos: Vector3, endPos: Vector3, width: number, thickness: number)
+	local delta = endPos - startPos
+	local length = delta.Magnitude
+	if length < 0.01 then
+		part.Transparency = 1
+		return
+	end
+	part.Size = Vector3.new(width, thickness, length)
+	part.CFrame = CFrame.lookAt(startPos + delta * 0.5, endPos)
+end
+
+local function updateCompassWorld(head: BasePart, direction: Vector3)
+	local basePos = head.Position + Vector3.new(0, 1.55, 0)
+	local right = Vector3.new(-direction.Z, 0, direction.X)
+	if right.Magnitude < 0.01 then
+		right = Vector3.new(1, 0, 0)
+	else
+		right = right.Unit
+	end
+
+	local shaftStart = basePos - direction * 0.35
+	local shaftEnd = basePos + direction * 0.7
+	local headTip = basePos + direction * 1.22
+	local headBase = basePos + direction * 0.7
+
+	setCompassSegment(compassShaft, shaftStart, shaftEnd, 0.16, 0.12)
+	setCompassSegment(compassHeadLeft, headTip, headBase + right * 0.42, 0.18, 0.14)
+	setCompassSegment(compassHeadRight, headTip, headBase - right * 0.42, 0.18, 0.14)
+
+	local radius = 1.28
+	for index, segment in compassRingSegments do
+		local angleA = ((index - 1) / #compassRingSegments) * math.pi * 2
+		local angleB = (index / #compassRingSegments) * math.pi * 2
+		local pointA = basePos + Vector3.new(math.cos(angleA) * radius, -0.08, math.sin(angleA) * radius)
+		local pointB = basePos + Vector3.new(math.cos(angleB) * radius, -0.08, math.sin(angleB) * radius)
+		setCompassSegment(segment, pointA, pointB, 0.045, 0.045)
+	end
+
+	setCompassWorldVisible(true)
+end
+
+local activeQuestTargetType = nil
+local compassTargetModel = nil
+local QUEST_TARGET_LABELS = {
+	TrainingDummy = "TRAINING DUMMY",
+	ForestDemon = "FOREST DEMON",
+	DemonBoss = "DEMON BOSS",
+	SnowDemon = "FROST DEMON",
+	SnowDemonBoss = "FROST BOSS",
+}
+
+local function getEnemyFolder(enemyType)
+	if enemyType == "TrainingDummy" then
+		return workspace:FindFirstChild("TrainingDummies")
+	end
+	if enemyType == "ForestDemon" or enemyType == "DemonBoss" then
+		return workspace:FindFirstChild("ForestDemons")
+	end
+	if enemyType == "SnowDemon" or enemyType == "SnowDemonBoss" then
+		return workspace:FindFirstChild("SnowDemons")
+	end
+	return nil
+end
+
+local function findNearestQuestTarget(enemyType)
+	local folder = getEnemyFolder(enemyType)
+	local character = LocalPlayer.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not folder or not root then return nil end
+
+	local nearest = nil
+	local nearestDistance = math.huge
+	for _, model in ipairs(folder:GetChildren()) do
+		if model:IsA("Model") and model:GetAttribute("EnemyType") == enemyType then
+			local humanoid = model:FindFirstChildOfClass("Humanoid")
+			local targetRoot = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+			if humanoid and humanoid.Health > 0 and targetRoot then
+				local distance = (targetRoot.Position - root.Position).Magnitude
+				if distance < nearestDistance then
+					nearest = model
+					nearestDistance = distance
+				end
+			end
+		end
+	end
+	return nearest
+end
+
+local function refreshQuestCompass()
+	if not activeQuestTargetType then
+		compassTargetModel = nil
+		compassBillboard.Enabled = false
+		setCompassWorldVisible(false)
+		return
+	end
+
+	compassTargetModel = findNearestQuestTarget(activeQuestTargetType)
+	compassBillboard.Enabled = true
+	setCompassWorldVisible(false)
+	compassTargetLabel.Text = QUEST_TARGET_LABELS[activeQuestTargetType] or "QUEST TARGET"
+	if not compassTargetModel then
+		compassDistanceLabel.Text = "Target respawning..."
+	end
+end
+
 local function updateTracker(data)
 	if not data then
 		trackerFrame.Visible = false
+		activeQuestTargetType = nil
+		refreshQuestCompass()
 		return
 	end
 
 	trackerTitle.Text = data.title
 	trackerFrame.Visible = true
+	activeQuestTargetType = QuestTargetModule.getIncompleteEnemyType(data.objectives, data.progress)
+	refreshQuestCompass()
 
 	local objectiveTexts = {}
 	local progressTexts = {}
@@ -452,6 +708,58 @@ local function updateTracker(data)
 		trackerProgress.TextColor3 = QUEST_ACTIVE
 	end
 end
+
+local compassSearchElapsed = 0
+RunService.RenderStepped:Connect(function(dt)
+	compassSearchElapsed += dt
+	if compassSearchElapsed >= 0.5 then
+		compassSearchElapsed = 0
+		if activeQuestTargetType then
+			local humanoid = compassTargetModel and compassTargetModel:FindFirstChildOfClass("Humanoid")
+			if not humanoid or humanoid.Health <= 0 then
+				refreshQuestCompass()
+			end
+		end
+	end
+
+	if not activeQuestTargetType then
+		compassBillboard.Enabled = false
+		setCompassWorldVisible(false)
+		return
+	end
+
+	local character = LocalPlayer.Character
+	local head = character and character:FindFirstChild("Head")
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not head or not root then
+		compassBillboard.Enabled = false
+		setCompassWorldVisible(false)
+		return
+	end
+
+	compassBillboard.Adornee = head
+	compassBillboard.Enabled = true
+
+	if not compassTargetModel then
+		setCompassWorldVisible(false)
+		return
+	end
+	local targetRoot = compassTargetModel:FindFirstChild("HumanoidRootPart") or compassTargetModel.PrimaryPart
+	if not targetRoot then
+		setCompassWorldVisible(false)
+		return
+	end
+
+	local offset = targetRoot.Position - root.Position
+	local flatOffset = Vector3.new(offset.X, 0, offset.Z)
+	if flatOffset.Magnitude < 0.01 then
+		setCompassWorldVisible(false)
+		return
+	end
+	local direction = flatOffset.Unit
+	updateCompassWorld(head, direction)
+	compassDistanceLabel.Text = tostring(math.floor(offset.Magnitude + 0.5)) .. " studs"
+end)
 
 -- ==================== QUEST COMPLETE NOTIFICATION ====================
 local completeFrame = Instance.new("Frame")

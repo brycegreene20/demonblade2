@@ -80,6 +80,11 @@ local SAVE_FIELDS = {
 local playerData = {}
 local staminaRegenTimers = {}
 local staminaRegenLoops = {}
+local PROGRESSION_FIELDS = {
+	TotalFocusXP = true,
+	TotalFocusRebirths = true,
+	SelflessStateXP = true,
+}
 local DEFAULT_STARTING_TITLE = "DemonSlayer"
 local DEBUG_IDENTITY = true
 
@@ -87,6 +92,33 @@ local function identityLog(message)
 	if DEBUG_IDENTITY then
 		print("[PlayerDataModule:Identity] " .. message)
 	end
+end
+
+local function getRuntimeWalkSpeed(player, baseSpeed)
+	-- selene: allow(global_usage)
+	local focusServer = shared and shared.TotalFocusServer
+	if focusServer and focusServer.getRuntimeWalkSpeed then
+		local ok, result = pcall(focusServer.getRuntimeWalkSpeed, player, baseSpeed)
+		if ok and type(result) == "number" then
+			return result
+		end
+	end
+	return baseSpeed
+end
+
+local function getSelflessNumber(player, methodName, defaultValue)
+	-- selene: allow(global_usage)
+	local selflessServer = shared and shared.SelflessStateServer
+	local method = selflessServer and selflessServer[methodName]
+	if type(method) ~= "function" then
+		return defaultValue
+	end
+
+	local ok, result = pcall(method, player)
+	if ok and type(result) == "number" then
+		return result
+	end
+	return defaultValue
 end
 
 local StatsChanged = Remotes:FindFirstChild("StatsChanged")
@@ -249,14 +281,20 @@ function PlayerDataModule.getDefenseMultiplier(player)
 	local data = playerData[player]
 	if not data then return 0 end
 	local stats = PlayerDataModule.computeStats(data)
-	return stats.defenseMultiplier
+	local selflessBonus = getSelflessNumber(player, "getDefenseBonus", 0)
+	local selflessCap = getSelflessNumber(player, "getMaxDefenseMultiplier", 0.85)
+	return math.min(stats.defenseMultiplier + selflessBonus, selflessCap)
 end
 
 function PlayerDataModule.getEffectiveWalkSpeed(player)
 	local data = playerData[player]
 	if not data then return StatConfig.BASE.WalkSpeed end
 	local stats = PlayerDataModule.computeStats(data)
-	return stats.walkSpeed
+	return getRuntimeWalkSpeed(player, stats.walkSpeed)
+end
+
+function PlayerDataModule.getAbilityCooldownMultiplier(player)
+	return getSelflessNumber(player, "getAbilityCooldownMultiplier", 1)
 end
 
 function PlayerDataModule.getTechniqueFactionFromData(data)
@@ -293,7 +331,7 @@ function PlayerDataModule.applyStatEffects(player)
 	data.MaxStamina = stats.maxStamina
 	data.WalkSpeed = stats.walkSpeed
 
-	humanoid.WalkSpeed = stats.walkSpeed
+	humanoid.WalkSpeed = PlayerDataModule.getEffectiveWalkSpeed(player)
 
 	if data.MaxHP ~= oldMaxHP then
 		data._syncingHealth = true
@@ -800,7 +838,7 @@ function PlayerDataModule.initPlayer(player)
 	humanoid.Health = data.HP
 	data._syncingHealth = false
 
-	humanoid.WalkSpeed = stats.walkSpeed
+	humanoid.WalkSpeed = PlayerDataModule.getEffectiveWalkSpeed(player)
 	humanoid.UseJumpPower = true
 	humanoid.JumpPower = data.JumpPower
 
@@ -826,6 +864,16 @@ end
 
 function PlayerDataModule.getData(player)
 	return playerData[player]
+end
+
+function PlayerDataModule.setProgressionField(player, fieldName, value)
+	if not PROGRESSION_FIELDS[fieldName] or type(value) ~= "number" then
+		return false
+	end
+	local data = playerData[player]
+	if not data then return false end
+	data[fieldName] = value
+	return true
 end
 
 function PlayerDataModule.setHP(player, value)
@@ -888,7 +936,8 @@ function PlayerDataModule.startStaminaRegen(player)
 			local pauseUntil = staminaRegenTimers[player] or 0
 			local effMax = PlayerDataModule.getEffectiveMaxStamina(player)
 			if now >= pauseUntil and data.Stamina < effMax then
-				data.Stamina = math.min(data.Stamina + data.StaminaRegen * 0.1, effMax)
+				local regenMultiplier = getSelflessNumber(player, "getStaminaRegenMultiplier", 1)
+				data.Stamina = math.min(data.Stamina + data.StaminaRegen * regenMultiplier * 0.1, effMax)
 				StaminaChanged:FireClient(player, data.Stamina, effMax)
 			end
 		end
@@ -939,7 +988,7 @@ function PlayerDataModule.onCharacterAdded(player)
 	humanoid.Health = data.HP
 	data._syncingHealth = false
 
-	humanoid.WalkSpeed = stats.walkSpeed
+	humanoid.WalkSpeed = PlayerDataModule.getEffectiveWalkSpeed(player)
 	humanoid.UseJumpPower = true
 	humanoid.JumpPower = data.JumpPower
 
@@ -1146,16 +1195,7 @@ function PlayerDataModule.consumeRaceSpin(player)
 end
 
 -- ==================== BOUNTY SYSTEM ====================
-local BountyChanged = Remotes:FindFirstChild("BountyChanged")
-
 local function notifyBountyChanged(player, bounty)
-	if not BountyChanged then
-		BountyChanged = Remotes:FindFirstChild("BountyChanged")
-	end
-	if BountyChanged then
-		BountyChanged:FireAllClients(player, bounty)
-	end
-
 	-- selene: allow(global_usage)
 	local bountyServer = shared and shared.BountyServer
 	if bountyServer and bountyServer.onBountyChanged then
