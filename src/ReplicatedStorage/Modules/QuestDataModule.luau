@@ -136,6 +136,50 @@ QuestDataModule.Quests = {
 			},
 		},
 	},
+	{
+		id = "frost_demon_01",
+		title = "Frost Demon Hunt",
+		description = "Defeat three frost demons in the snowy region for the Corps Officer.",
+		npcId = "QuestNPC_Officer",
+		zone = "StarterVillage",
+		requiredLevel = 4,
+		prerequisite = "demon_02",
+		xpReward = 260,
+		masteryXPReward = 70,
+		titleXPReward = 45,
+		repeatable = true,
+		repeatCooldown = 0,
+		objectives = {
+			{
+				type = "KillCount",
+				enemyType = "SnowDemon",
+				label = "Defeat Frost Demons",
+				required = 3,
+			},
+		},
+	},
+	{
+		id = "frost_boss_01",
+		title = "Blizzard Tyrant",
+		description = "Travel deeper into the snowy region and defeat the Frost Demon Boss.",
+		npcId = "QuestNPC_Officer",
+		zone = "StarterVillage",
+		requiredLevel = 8,
+		prerequisite = "frost_demon_01",
+		xpReward = 850,
+		masteryXPReward = 220,
+		titleXPReward = 150,
+		repeatable = true,
+		repeatCooldown = 0,
+		objectives = {
+			{
+				type = "KillCount",
+				enemyType = "SnowDemonBoss",
+				label = "Defeat the Frost Demon Boss",
+				required = 1,
+			},
+		},
+	},
 }
 
 local questLookup = {}

@@ -32,8 +32,10 @@ local incomingHitTimestamps = {}
 local parryStaggerTargets = {}
 local damageContributors = setmetatable({}, { __mode = "k" })
 local friendlyFireLogTimes = setmetatable({}, { __mode = "k" })
+local progressionErrorLogTimes = {}
 
 local FRIENDLY_FIRE_LOG_COOLDOWN = 10
+local PROGRESSION_ERROR_LOG_COOLDOWN = 10
 
 local function isModelInSafeZone(model)
 	local hrp = model and model:FindFirstChild("HumanoidRootPart")
@@ -48,6 +50,29 @@ end
 
 function CombatModule.isModelInSafeZone(model)
 	return isModelInSafeZone(model)
+end
+
+local function dispatchProgressionEvent(serviceName, service, player, eventName)
+	if not service or not service.grantEventXP then return end
+	local ok, dispatchError = pcall(service.grantEventXP, player, eventName)
+	if ok then return end
+
+	local now = os.clock()
+	local lastLog = progressionErrorLogTimes[serviceName] or 0
+	if now - lastLog >= PROGRESSION_ERROR_LOG_COOLDOWN then
+		progressionErrorLogTimes[serviceName] = now
+		warn(("[CombatModule] %s progression failed: %s"):format(serviceName, tostring(dispatchError)))
+	end
+end
+
+function CombatModule.grantStateProgressionEvent(player, eventName)
+	if not player then return end
+	-- These services register after startup; each dispatch is isolated so optional
+	-- progression can never interrupt damage, rewards, or defeated-model cleanup.
+	-- selene: allow(global_usage)
+	dispatchProgressionEvent("TotalFocus", shared and shared.TotalFocusServer, player, eventName)
+	-- selene: allow(global_usage)
+	dispatchProgressionEvent("SelflessState", shared and shared.SelflessStateServer, player, eventName)
 end
 
 function CombatModule.canPlayerDamageTarget(attackerPlayer, targetModel)
@@ -84,6 +109,12 @@ function CombatModule.recordDamageContribution(targetModel, attackerPlayer, amou
 	current.damage += amount or 0
 	current.lastHit = os.clock()
 	contributors[attackerPlayer] = current
+end
+
+function CombatModule.recordPlayerDamage(targetModel, attackerPlayer, amount)
+	if not targetModel or not attackerPlayer then return end
+	targetModel:SetAttribute("LastAttacker", attackerPlayer.UserId)
+	CombatModule.recordDamageContribution(targetModel, attackerPlayer, amount)
 end
 
 function CombatModule.getRewardPlayers(_targetModel, primaryPlayer, maxDistance)
@@ -219,11 +250,18 @@ function CombatModule.applyDamage(targetModel, amount, attackerPlayer, isHeavyOr
 	end
 	CombatModule.recordIncomingHit(targetModel, attackerCharacter)
 
+	if attackerPlayer then
+		-- Attribute the hit before damage because a lethal TakeDamage can fire Died immediately.
+		CombatModule.recordPlayerDamage(targetModel, attackerPlayer, finalAmount)
+	end
+
 	humanoid:TakeDamage(finalAmount)
 
 	if attackerPlayer then
-		targetModel:SetAttribute("LastAttacker", attackerPlayer.UserId)
-		CombatModule.recordDamageContribution(targetModel, attackerPlayer, finalAmount)
+		CombatModule.grantStateProgressionEvent(attackerPlayer, "DamageDealt")
+	end
+	if targetPlayer then
+		CombatModule.grantStateProgressionEvent(targetPlayer, "DamageTaken")
 	end
 
 	local targetHRP = targetModel:FindFirstChild("HumanoidRootPart")
@@ -259,6 +297,9 @@ function CombatModule.applyDamageFromNPC(targetModel, amount, attackerModel)
 	CombatModule.recordIncomingHit(targetModel, attackerModel)
 
 	humanoid:TakeDamage(finalAmount)
+	if targetPlayer then
+		CombatModule.grantStateProgressionEvent(targetPlayer, "DamageTaken")
+	end
 
 	local targetHRP = targetModel:FindFirstChild("HumanoidRootPart")
 	local hitPos = targetHRP and targetHRP.Position or Vector3.zero

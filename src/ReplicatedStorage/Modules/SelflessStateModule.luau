@@ -4,6 +4,9 @@ local SelflessStateModule = {}
 SelflessStateModule.MAX_TIER = 10
 SelflessStateModule.V1_BONUS  = 0.10  -- 10% base bonus at V1
 SelflessStateModule.TIER_STEP = 0.05  -- +5% per additional tier
+SelflessStateModule.ACTIVE_DURATION = 20
+SelflessStateModule.COOLDOWN_DURATION = 20
+SelflessStateModule.MAX_DEFENSE_MULTIPLIER = 0.85
 
 -- Absolute XP thresholds to reach each tier (floor ≠ roof of previous).
 SelflessStateModule.TIER_XP = {
@@ -19,10 +22,19 @@ SelflessStateModule.TIER_XP = {
 	45000,  -- V10
 }
 
--- Dodge points pool
-SelflessStateModule.MAX_DODGE_POINTS   = 100
-SelflessStateModule.DODGE_REGEN_RATE   = 5   -- per second
-SelflessStateModule.XP_DODGE_COST      = 10  -- dodge points spent per XP event
+-- The old dodge-point pool only throttled XP and never dodged attacks.
+-- Keep the persisted data field for compatibility, but do not gate progression on it.
+SelflessStateModule.REQUIRES_DODGE_POINTS_FOR_XP = false
+local XP_BY_EVENT: { [string]: number } = {
+	DamageDealt = 1,
+	DamageTaken = 3,
+	Kill = 10,
+}
+SelflessStateModule.XP_BY_EVENT = XP_BY_EVENT
+
+function SelflessStateModule.getXPForEvent(eventName: string): number
+	return XP_BY_EVENT[eventName] or 0
+end
 
 -- Returns 1-based tier (1 = V1) from accumulated XP.
 function SelflessStateModule.getTier(xp: number): number
@@ -39,6 +51,18 @@ end
 function SelflessStateModule.getBonusForTier(tier: number): number
 	local t = math.clamp(tier, 1, SelflessStateModule.MAX_TIER)
 	return SelflessStateModule.V1_BONUS + (t - 1) * SelflessStateModule.TIER_STEP
+end
+
+function SelflessStateModule.getStaminaRegenMultiplier(tier: number): number
+	return 1 + SelflessStateModule.getBonusForTier(tier)
+end
+
+function SelflessStateModule.getCooldownMultiplier(tier: number): number
+	return math.max(0.45, 1 - SelflessStateModule.getBonusForTier(tier))
+end
+
+function SelflessStateModule.getDefenseBonusForTier(tier: number): number
+	return SelflessStateModule.getBonusForTier(tier)
 end
 
 -- XP required to reach the next tier, or nil if already V10.

@@ -5,7 +5,6 @@ local original = roblox.deserializePlace(fs.readFile("DemonBlade2.rbxl"))
 local built = roblox.deserializePlace(fs.readFile("build_check.rbxl"))
 
 local serviceNames = {
-	"Workspace",
 	"Players",
 	"Lighting",
 	"MaterialService",

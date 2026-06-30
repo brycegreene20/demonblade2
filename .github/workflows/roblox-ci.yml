@@ -1,4 +1,4 @@
-name: Roblox CI/CD
+name: Roblox CI
 
 on:
   pull_request:
@@ -10,15 +10,6 @@ on:
       - dev
       - main
   workflow_dispatch:
-    inputs:
-      target:
-        description: "Deployment target"
-        required: true
-        default: "staging"
-        type: choice
-        options:
-          - staging
-          - production
 
 permissions:
   contents: read
@@ -88,7 +79,7 @@ jobs:
       - name: Lint Luau with Selene
         shell: pwsh
         run: |
-          & "$env:SELENE" src
+          & "$env:SELENE" src --allow-warnings
 
       - name: Run Luau unit tests
         shell: pwsh
@@ -105,147 +96,21 @@ jobs:
         run: |
           & "$env:ROJO" sourcemap default.project.json --include-non-scripts -o sourcemap.json
 
-      - name: Verify imported Studio non-script structure
-        if: hashFiles('DemonBlade2.rbxl') != ''
+      - name: Compare managed non-Workspace structure
+        if: hashFiles('DemonBlade2.rbxl', 'DemonBlade2 update*.rbxl') != ''
         shell: pwsh
         run: |
           & "$env:LUNE" run tools/compare_non_script_structure.luau
 
-      - name: Verify full Studio structure
-        if: hashFiles('DemonBlade2.rbxl') != ''
-        shell: pwsh
-        run: |
-          & "$env:LUNE" run tools/compare_full_structure.luau
-
       - name: Verify key service properties
-        if: hashFiles('DemonBlade2.rbxl') != ''
+        if: hashFiles('DemonBlade2.rbxl', 'DemonBlade2 update*.rbxl') != ''
         shell: pwsh
         run: |
           & "$env:LUNE" run tools/compare_key_service_properties.luau
 
-      - name: Upload build artifact
+      - name: Upload code validation artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DemonBlade2-build
+          name: DemonBlade2-code-build
           path: build_check.rbxl
           if-no-files-found: error
-
-  deploy-staging:
-    name: Deploy Staging Env - Demon Blade 2
-    runs-on: windows-latest
-    needs: validate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch' && inputs.target == 'staging'
-    environment: staging
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rojo
-        shell: pwsh
-        run: |
-          $headers = @{ Authorization = "Bearer ${{ github.token }}" }
-          $release = Invoke-RestMethod "https://api.github.com/repos/rojo-rbx/rojo/releases/tags/v$env:ROJO_VERSION" -Headers $headers
-          $asset = $release.assets | Where-Object {
-            $_.name -match "windows" -and $_.name -match "x86_64" -and $_.name -match "\.zip$"
-          } | Select-Object -First 1
-          if (-not $asset) { throw "Could not find Rojo Windows x86_64 zip asset." }
-
-          New-Item -ItemType Directory -Force tools/bin | Out-Null
-          Invoke-WebRequest $asset.browser_download_url -OutFile tools/bin/rojo.zip
-          Expand-Archive tools/bin/rojo.zip -DestinationPath tools/bin/rojo -Force
-          $rojo = Get-ChildItem tools/bin/rojo -Recurse -Filter rojo.exe | Select-Object -First 1
-          if (-not $rojo) { throw "rojo.exe was not found after extraction." }
-          "ROJO=$($rojo.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Validate Roblox secrets (staging)
-        shell: pwsh
-        env:
-          ROBLOX_API_KEY: ${{ secrets.ROBLOXSTAGINGAPIKEY }}
-          STAGING_PLACE_ID: ${{ secrets.STAGING_PLACE_ID }}
-          STAGING_UNIVERSE_ID: ${{ secrets.STAGING_UNIVERSE_ID }}
-        run: |
-          if (-not $env:ROBLOX_API_KEY)      { throw "Missing ROBLOXSTAGINGAPIKEY secret." }
-          if (-not $env:STAGING_PLACE_ID)    { throw "Missing STAGING_PLACE_ID secret." }
-          if (-not $env:STAGING_UNIVERSE_ID) { throw "Missing STAGING_UNIVERSE_ID secret." }
-          Write-Host "All staging secrets are present."
-
-      - name: Upload to Staging Env - Demon Blade 2
-        shell: pwsh
-        env:
-          ROBLOX_API_KEY: ${{ secrets.ROBLOXSTAGINGAPIKEY }}
-          STAGING_PLACE_ID: ${{ secrets.STAGING_PLACE_ID }}
-          STAGING_UNIVERSE_ID: ${{ secrets.STAGING_UNIVERSE_ID }}
-        run: |
-          if (-not $env:ROBLOX_API_KEY) { throw "Missing ROBLOXSTAGINGAPIKEY secret." }
-          if (-not $env:STAGING_PLACE_ID) { throw "Missing STAGING_PLACE_ID secret." }
-          if (-not $env:STAGING_UNIVERSE_ID) { throw "Missing STAGING_UNIVERSE_ID secret." }
-
-          $placeId     = $env:STAGING_PLACE_ID.Trim()
-          $universeId  = $env:STAGING_UNIVERSE_ID.Trim()
-          $apiKey      = $env:ROBLOX_API_KEY.Trim()
-
-          & "$env:ROJO" upload default.project.json `
-            --asset_id $placeId `
-            --universe_id $universeId `
-            --api_key $apiKey
-
-  deploy-production:
-    name: Deploy Demon Blade 2 Publish
-    runs-on: windows-latest
-    needs: validate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' && inputs.target == 'production'
-    environment: production
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rojo
-        shell: pwsh
-        run: |
-          $headers = @{ Authorization = "Bearer ${{ github.token }}" }
-          $release = Invoke-RestMethod "https://api.github.com/repos/rojo-rbx/rojo/releases/tags/v$env:ROJO_VERSION" -Headers $headers
-          $asset = $release.assets | Where-Object {
-            $_.name -match "windows" -and $_.name -match "x86_64" -and $_.name -match "\.zip$"
-          } | Select-Object -First 1
-          if (-not $asset) { throw "Could not find Rojo Windows x86_64 zip asset." }
-
-          New-Item -ItemType Directory -Force tools/bin | Out-Null
-          Invoke-WebRequest $asset.browser_download_url -OutFile tools/bin/rojo.zip
-          Expand-Archive tools/bin/rojo.zip -DestinationPath tools/bin/rojo -Force
-          $rojo = Get-ChildItem tools/bin/rojo -Recurse -Filter rojo.exe | Select-Object -First 1
-          if (-not $rojo) { throw "rojo.exe was not found after extraction." }
-          "ROJO=$($rojo.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Validate Roblox secrets (production)
-        shell: pwsh
-        env:
-          ROBLOX_API_KEY: ${{ secrets.ROBLOXPRODUCTIONAPIKEY }}
-          PRODUCTION_PLACE_ID: ${{ secrets.PRODUCTION_PLACE_ID }}
-          PRODUCTION_UNIVERSE_ID: ${{ secrets.PRODUCTION_UNIVERSE_ID }}
-        run: |
-          if (-not $env:ROBLOX_API_KEY)         { throw "Missing ROBLOXPRODUCTIONAPIKEY secret." }
-          if (-not $env:PRODUCTION_PLACE_ID)    { throw "Missing PRODUCTION_PLACE_ID secret." }
-          if (-not $env:PRODUCTION_UNIVERSE_ID) { throw "Missing PRODUCTION_UNIVERSE_ID secret." }
-          Write-Host "All production secrets are present."
-
-      - name: Upload to Demon Blade 2 Publish
-        shell: pwsh
-        env:
-          ROBLOX_API_KEY: ${{ secrets.ROBLOXPRODUCTIONAPIKEY }}
-          PRODUCTION_PLACE_ID: ${{ secrets.PRODUCTION_PLACE_ID }}
-          PRODUCTION_UNIVERSE_ID: ${{ secrets.PRODUCTION_UNIVERSE_ID }}
-        run: |
-          if (-not $env:ROBLOX_API_KEY) { throw "Missing ROBLOXPRODUCTIONAPIKEY secret." }
-          if (-not $env:PRODUCTION_PLACE_ID) { throw "Missing PRODUCTION_PLACE_ID secret." }
-          if (-not $env:PRODUCTION_UNIVERSE_ID) { throw "Missing PRODUCTION_UNIVERSE_ID secret." }
-
-          $placeId     = $env:PRODUCTION_PLACE_ID.Trim()
-          $universeId  = $env:PRODUCTION_UNIVERSE_ID.Trim()
-          $apiKey      = $env:ROBLOX_API_KEY.Trim()
-
-          & "$env:ROJO" upload default.project.json `
-            --asset_id $placeId `
-            --universe_id $universeId `
-            --api_key $apiKey

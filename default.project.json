@@ -23,10 +23,11 @@
         "EnvironmentDiffuseScale": 0.800000011920929,
         "EnvironmentSpecularScale": 0.5,
         "ExposureCompensation": -0.30000001192092896,
-        "FogColor": [0.7529412, 0.7529412, 0.7529412],
+        "FogColor": [0.75294125, 0.75294125, 0.75294125],
         "GeographicLatitude": 40,
         "GlobalShadows": true,
-        "OutdoorAmbient": [0.27450982, 0.27450982, 0.27450982]
+        "OutdoorAmbient": [0.27450982, 0.27450982, 0.27450982],
+        "ShadowSoftness": 0.2
       },
       "$path": "src/Lighting"
     },
@@ -81,6 +82,7 @@
     "StarterPlayer": {
       "$className": "StarterPlayer",
       "$properties": {
+        "CameraMaxZoomDistance": 128,
         "CharacterUseJumpPower": false
       },
       "StarterPlayerScripts": {

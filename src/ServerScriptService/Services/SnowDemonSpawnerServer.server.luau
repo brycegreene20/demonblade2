@@ -15,6 +15,7 @@ attackAnimRemote.Parent = ReplicatedStorage
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
 local CombatModule = require(Modules:WaitForChild("CombatModule"))
+local WorldSpawnConfigModule = require(Modules:WaitForChild("WorldSpawnConfigModule"))
 
 local MASTERY_KILL_REWARDS = {
 	[1] = 3, [2] = 5, [3] = 8, [4] = 12, [5] = 12,
@@ -23,6 +24,8 @@ local MASTERY_KILL_REWARDS = {
 
 local AGGRO_RADIUS = 55
 local ATTACK_RADIUS = 8
+local ATTACK_MOVE_STOP_RADIUS = 4.5
+local ATTACK_ENGAGE_RADIUS = 6.5
 local ATTACK_COOLDOWN = 1.5
 local ATTACK_WINDUP = CombatModule.NPC_ATTACK_WINDUP
 local BOSS_SPECIAL_COOLDOWN = 7
@@ -35,7 +38,8 @@ local MIN_DEMON_SEPARATION = 4.5
 local WANDER_RADIUS = 20
 local WANDER_SPEED_MULT = 0.35
 local FALLBACK_Y = 0.5
-local GROUND_OFFSET = 3 -- studs above terrain to place HRP; boss scales this by 1.85
+local GROUND_OFFSET = 3 -- studs above terrain to place HRP; boss scales this by BOSS_SCALE
+local BOSS_SCALE = 2.75
 local DEBUG_DEMON_SPAWNS = false
 local DEBUG_DEMON_REWARDS = false
 
@@ -65,27 +69,13 @@ local DEMON_STATS = {
 }
 
 local BOSS_STATS = {
-	level = 12,
+	level = 14,
 	hp = 1600,
 	damage = 45,
 	xp = 600,
 }
 
-local RAW_SPAWNS = {
-	{ x = -120, z = 60,  level = 1 },
-	{ x = -130, z = 60,  level = 1 },
-	{ x = -140, z = 60,  level = 1 },
-	{ x = -150, z = 60,  level = 1 },
-	{ x = -110, z = -40, level = 2 },
-	{ x = -160, z = -60, level = 2 },
-	{ x = -130, z = -90, level = 3 },
-	{ x = -180, z = 20,  level = 3 },
-	{ x = -200, z = -40, level = 4 },
-	{ x = -170, z = -120, level = 5 },
-	{ x = -140, z = -150, level = 6 },
-	{ x = -200, z = -160, level = 7 },
-	{ x = -220, z = 80,  level = BOSS_STATS.level, boss = true },
-}
+local RAW_SPAWNS = WorldSpawnConfigModule.getFrostDemonSpawns()
 
 local SPAWN_POSITIONS = {}
 for _, raw in RAW_SPAWNS do
@@ -93,6 +83,9 @@ for _, raw in RAW_SPAWNS do
 		pos = CFrame.new(raw.x, FALLBACK_Y, raw.z),
 		level = raw.level,
 		boss = raw.boss == true,
+		x = raw.x,
+		z = raw.z,
+		zone = raw.zone,
 	})
 end
 
@@ -108,6 +101,102 @@ demonsFolder.Name = "SnowDemons"
 demonsFolder.Parent = workspace
 
 local activeDemons = {}
+
+local SPAWN_SEARCH_OFFSETS = {
+	Vector2.new(0, 0),
+	Vector2.new(8, 0),
+	Vector2.new(-8, 0),
+	Vector2.new(0, 8),
+	Vector2.new(0, -8),
+	Vector2.new(10, 10),
+	Vector2.new(-10, 10),
+	Vector2.new(10, -10),
+	Vector2.new(-10, -10),
+}
+
+local function getGroundResult(x, z)
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	local excluded = { demonsFolder }
+	local forestDemonsFolder = workspace:FindFirstChild("ForestDemons")
+	local dummiesFolder = workspace:FindFirstChild("TrainingDummies")
+	local markersFolder = workspace:FindFirstChild("DemonBlade2Markers")
+	if forestDemonsFolder then
+		table.insert(excluded, forestDemonsFolder)
+	end
+	if dummiesFolder then
+		table.insert(excluded, dummiesFolder)
+	end
+	if markersFolder then
+		table.insert(excluded, markersFolder)
+	end
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			table.insert(excluded, player.Character)
+		end
+	end
+	raycastParams.FilterDescendantsInstances = excluded
+	raycastParams.IgnoreWater = true
+	raycastParams.RespectCanCollide = true
+	return workspace:Raycast(Vector3.new(x, 350, z), Vector3.new(0, -800, 0), raycastParams)
+end
+
+local function hasSpawnClearance(cframe, isBoss)
+	local overlapParams = OverlapParams.new()
+	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+	local excluded = { demonsFolder }
+	local forestDemonsFolder = workspace:FindFirstChild("ForestDemons")
+	local dummiesFolder = workspace:FindFirstChild("TrainingDummies")
+	local markersFolder = workspace:FindFirstChild("DemonBlade2Markers")
+	if forestDemonsFolder then
+		table.insert(excluded, forestDemonsFolder)
+	end
+	if dummiesFolder then
+		table.insert(excluded, dummiesFolder)
+	end
+	if markersFolder then
+		table.insert(excluded, markersFolder)
+	end
+	overlapParams.FilterDescendantsInstances = excluded
+
+	local boxSize = isBoss and Vector3.new(14, 16, 14) or Vector3.new(6, 5, 6)
+	local parts = workspace:GetPartBoundsInBox(cframe * CFrame.new(0, 0.5, 0), boxSize, overlapParams)
+	for _, part in parts do
+		if part.CanCollide then
+			return false
+		end
+	end
+	return true
+end
+
+local function resolveSpawnCFrame(spawnData, isBoss)
+	local groundOffset = isBoss and GROUND_OFFSET * BOSS_SCALE or GROUND_OFFSET
+	local firstGroundCFrame = nil
+	for _, offset in SPAWN_SEARCH_OFFSETS do
+		local x = spawnData.x + offset.X
+		local z = spawnData.z + offset.Y
+		local result = getGroundResult(x, z)
+		if result and result.Normal.Y >= 0.65 then
+			local cframe = CFrame.new(result.Position + Vector3.new(0, groundOffset, 0))
+			firstGroundCFrame = firstGroundCFrame or cframe
+			if hasSpawnClearance(cframe, isBoss) then
+				return cframe
+			end
+		end
+	end
+
+	if firstGroundCFrame then
+		warn(("[SnowDemonSpawner] Ground found for %s but clearance was blocked; using grounded fallback"):format(
+			spawnData.zone or "unknown zone"
+		))
+		return firstGroundCFrame
+	end
+
+	warn(("[SnowDemonSpawner] No clear ground found for %s; using configured fallback"):format(
+		spawnData.zone or "unknown zone"
+	))
+	return CFrame.new(spawnData.x, FALLBACK_Y + groundOffset, spawnData.z)
+end
 
 local function getStatsForLevel(level)
 	level = math.clamp(level, 1, 10)
@@ -128,7 +217,7 @@ local function createHPBar(parent, name, level)
 	billboard.Size = UDim2.fromScale(BAR_WIDTH, BAR_HEIGHT)
 	billboard.StudsOffset = Vector3.new(0, 3, 0)
 	billboard.AlwaysOnTop = true
-	billboard.MaxDistance = 60
+	billboard.MaxDistance = 120
 	billboard.LightInfluence = 0
 	billboard.Parent = parent
 
@@ -375,15 +464,20 @@ local function findPlayerInRadius(position, radius)
 end
 
 local function spawnDemon(spawnData)
-	local spawnCFrame = spawnData.pos
 	local level = spawnData.level
 	local isBoss = spawnData.boss == true
+	local spawnCFrame = resolveSpawnCFrame(spawnData, isBoss)
 	local stats = isBoss and BOSS_STATS or getStatsForLevel(level)
 	local enemyType = isBoss and "SnowDemonBoss" or "SnowDemon"
 	local displayName = isBoss and "Snow Demon Boss" or "Snow Demon"
 
 	local demon = DemonTemplate:Clone()
 	demon.Name = isBoss and "SnowDemonBoss" or ("SnowDemon_Lv" .. level)
+	for _, descendant in demon:GetDescendants() do
+		if descendant:IsA("LuaSourceContainer") then
+			descendant:Destroy()
+		end
+	end
 
 	-- Support both R6 (Torso) and R15 (UpperTorso/LowerTorso) rigs
 	local torso = demon:FindFirstChild("Torso")
@@ -433,6 +527,7 @@ local function spawnDemon(spawnData)
 	demon:SetAttribute("Level", level)
 	demon:SetAttribute("Damage", stats.damage)
 	demon:SetAttribute("EnemyType", enemyType)
+	demon:SetAttribute("SpawnZone", spawnData.zone or "FrostSnowfield")
 	demon:SetAttribute("XPReward", stats.xp)
 	demon:SetAttribute("IsBoss", isBoss)
 
@@ -443,7 +538,7 @@ local function spawnDemon(spawnData)
 
 	if isBoss then
 		local ok, scaleErr = pcall(function()
-			demon:ScaleTo(1.85)
+			demon:ScaleTo(BOSS_SCALE)
 		end)
 		if not ok then
 			warn("[SnowDemonSpawner] Could not scale Snow Demon Boss: " .. tostring(scaleErr))
@@ -461,22 +556,9 @@ local function spawnDemon(spawnData)
 	end
 	hrp.Anchored = true
 
-	-- Raycast down from high Y to find actual terrain so the model lands on the ground.
-	local rayParams = RaycastParams.new()
-	rayParams.FilterType = Enum.RaycastFilterType.Exclude
-	rayParams.FilterDescendantsInstances = {demonsFolder}
-	local rayResult = workspace:Raycast(
-		Vector3.new(spawnCFrame.X, 500, spawnCFrame.Z),
-		Vector3.new(0, -600, 0),
-		rayParams
-	)
-	local groundY = rayResult and rayResult.Position.Y or FALLBACK_Y
-	local groundOffset = isBoss and GROUND_OFFSET * 1.85 or GROUND_OFFSET
-	local placeCFrame = CFrame.new(spawnCFrame.X, groundY + groundOffset, spawnCFrame.Z)
-
-	demon:PivotTo(placeCFrame)
-	hrp.CFrame = placeCFrame
-	streamAnchor.CFrame = placeCFrame
+	demon:PivotTo(spawnCFrame)
+	hrp.CFrame = spawnCFrame
+	streamAnchor.CFrame = spawnCFrame
 
 	CollectionService:AddTag(demon, "Demon")
 
@@ -588,9 +670,23 @@ local function spawnDemon(spawnData)
 		end
 
 		local lastAttackerId = demon:GetAttribute("LastAttacker")
+		for i, state in activeDemons do
+			if state == demonState then
+				table.remove(activeDemons, i)
+				break
+			end
+		end
+		-- Remove the rig and schedule its replacement before optional rewards.
+		-- Reward failures must never leave a defeated Snow Demon in Workspace.
+		demon:Destroy()
+		task.delay(RESPAWN_TIME, function()
+			spawnDemon(spawnData)
+		end)
+
 		if lastAttackerId then
 			local attacker = Players:GetPlayerByUserId(lastAttackerId)
 			if attacker then
+				CombatModule.grantStateProgressionEvent(attacker, "Kill")
 				local rewardPlayers = CombatModule.getRewardPlayers(demon, attacker, 160)
 				for _, rewardedPlayer in rewardPlayers do
 					PlayerDataModule.addXP(rewardedPlayer, stats.xp)
@@ -618,30 +714,6 @@ local function spawnDemon(spawnData)
 			end
 		end
 		CombatModule.clearDamageContributors(demon)
-
-		for _, part in demon:GetDescendants() do
-			if part:IsA("BasePart") and part ~= hrp and part ~= streamAnchor then
-				TweenService:Create(part, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-					Transparency = 1,
-				}):Play()
-			end
-		end
-
-		task.delay(0.65, function()
-			if demon and demon.Parent then
-				demon:Destroy()
-			end
-		end)
-
-		task.delay(RESPAWN_TIME, function()
-			for i, ds in activeDemons do
-				if ds == demonState then
-					table.remove(activeDemons, i)
-					break
-				end
-			end
-			spawnDemon(spawnData)
-		end)
 	end)
 
 	table.insert(activeDemons, demonState)
@@ -681,12 +753,12 @@ task.spawn(function()
 					local flatDir = Vector3.new(direction.X, 0, direction.Z)
 					if flatDir.Magnitude > 0.1 then
 						local nextPos
-						if dist > ATTACK_RADIUS then
-							nextPos = currentPos + flatDir.Unit * math.min(MOVE_SPEED * AI_TICK, dist - ATTACK_RADIUS)
+						if dist > ATTACK_MOVE_STOP_RADIUS then
+							nextPos = currentPos + flatDir.Unit * math.min(MOVE_SPEED * AI_TICK, dist - ATTACK_MOVE_STOP_RADIUS)
 						else
 							-- Each demon targets its own angular slot around the player so they ring out
 							-- instead of all converging to the same point.
-							local spread = ATTACK_RADIUS * 0.65
+							local spread = ATTACK_MOVE_STOP_RADIUS * 0.75
 							local idealPos = Vector3.new(
 								targetPos.X + math.cos(demonState.sepAngle) * spread,
 								currentPos.Y,
@@ -718,7 +790,7 @@ task.spawn(function()
 				demonState.aiState = "attacking"
 
 				local now = tick()
-				if dist <= ATTACK_RADIUS and now - demonState.lastAttack >= ATTACK_COOLDOWN and not demonState.isAttacking then
+				if dist <= ATTACK_ENGAGE_RADIUS and now - demonState.lastAttack >= ATTACK_COOLDOWN and not demonState.isAttacking then
 					demonState.lastAttack = now
 					demonState.isAttacking = true
 
@@ -765,7 +837,7 @@ task.spawn(function()
 								local playerHRP = character and character:FindFirstChild("HumanoidRootPart")
 								local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 								if playerHRP and humanoid and humanoid.Health > 0 then
-									if (playerHRP.Position - attackPos).Magnitude <= ATTACK_RADIUS and not isSafePosition(playerHRP.Position) then
+									if (playerHRP.Position - attackPos).Magnitude <= ATTACK_ENGAGE_RADIUS and not isSafePosition(playerHRP.Position) then
 										CombatModule.applyDamageFromNPC(character, demonState.stats.damage, demon)
 									end
 								end

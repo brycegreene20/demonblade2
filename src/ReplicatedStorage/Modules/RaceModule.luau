@@ -3,6 +3,8 @@ local RaceModule = {}
 RaceModule.DEFAULT_RACE = "Human"
 RaceModule.STARTING_SPINS = 5
 RaceModule.REGEN_INTERVAL_SECONDS = 10
+-- Temporary development setting. Disable when paid spins are introduced.
+RaceModule.UNLIMITED_SPINS = true
 
 RaceModule.RACES = {
 	Human = {
@@ -75,6 +77,7 @@ function RaceModule.getPublicData(raceId, spins)
 		AllStatsMultiplier = race.AllStatsMultiplier,
 		HealthRegenPercent = race.HealthRegenPercent,
 		Spins = math.max(0, tonumber(spins) or 0),
+		UnlimitedSpins = RaceModule.UNLIMITED_SPINS,
 	}
 end
 

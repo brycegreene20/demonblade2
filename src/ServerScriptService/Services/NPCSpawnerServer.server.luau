@@ -1,6 +1,10 @@
 local CollectionService = game:GetService("CollectionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local _TweenService = game:GetService("TweenService")
+
+local Modules = ReplicatedStorage:WaitForChild("Modules")
+local WorldSpawnConfigModule = require(Modules:WaitForChild("WorldSpawnConfigModule"))
 
 local NPC_CONFIGS = {
 	{
@@ -8,8 +12,6 @@ local NPC_CONFIGS = {
 		displayName = "Trainer Urokodaki",
 		roleText = "Training Quests",
 		hasQuestPrompt = true,
-		position = Vector3.new(-10, 3, 8),
-		facingAngle = 45,
 		bodyColors = {
 			Head = Color3.fromRGB(234, 184, 146),
 			Torso = Color3.fromRGB(60, 40, 80),
@@ -24,8 +26,6 @@ local NPC_CONFIGS = {
 		displayName = "Merchant Aoi",
 		roleText = "Merchant",
 		hasQuestPrompt = false,
-		position = Vector3.new(8, 3, -12),
-		facingAngle = -30,
 		bodyColors = {
 			Head = Color3.fromRGB(234, 184, 146),
 			Torso = Color3.fromRGB(50, 100, 60),
@@ -40,8 +40,6 @@ local NPC_CONFIGS = {
 		displayName = "Corps Officer",
 		roleText = "Demon Quests",
 		hasQuestPrompt = true,
-		position = Vector3.new(-6, 3, -15),
-		facingAngle = 0,
 		bodyColors = {
 			Head = Color3.fromRGB(234, 184, 146),
 			Torso = Color3.fromRGB(30, 30, 60),
@@ -96,10 +94,73 @@ local R6_PARTS = {
 
 local RING_COLOR = Color3.fromRGB(255, 210, 60)
 local RING_SECONDARY = Color3.fromRGB(255, 255, 150)
+local NPC_ROOT_HEIGHT = 3
+local MARKERS_FOLDER_NAME = "DemonBlade2Markers"
 
 local npcsFolder = Instance.new("Folder")
 npcsFolder.Name = "NPCs"
 npcsFolder.Parent = workspace
+
+local function copyConfig(config)
+	local nextConfig = {}
+	for key, value in config do
+		nextConfig[key] = value
+	end
+	return nextConfig
+end
+
+local function getMarkerPart(markerName)
+	local markersFolder = workspace:FindFirstChild(MARKERS_FOLDER_NAME)
+	if not markersFolder then
+		return nil
+	end
+
+	local marker = markersFolder:FindFirstChild(markerName)
+	if marker and marker:IsA("BasePart") then
+		return marker
+	end
+	return nil
+end
+
+local function resolveNPCSpawn(config)
+	local spawn = WorldSpawnConfigModule.getNPCSpawn(config.id)
+	local marker = getMarkerPart(config.id)
+	local configuredPosition = marker and marker.Position
+		or spawn and spawn.position
+		or config.position
+		or Vector3.new(0, 4, 0)
+	local facingAngle = marker and (marker:GetAttribute("FacingAngle") or marker.Orientation.Y)
+		or spawn and spawn.facingAngle
+		or config.facingAngle
+		or 0
+
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	local excluded = { npcsFolder }
+	local markersFolder = workspace:FindFirstChild(MARKERS_FOLDER_NAME)
+	if markersFolder then
+		table.insert(excluded, markersFolder)
+	end
+	raycastParams.FilterDescendantsInstances = excluded
+	raycastParams.IgnoreWater = true
+	raycastParams.RespectCanCollide = true
+
+	local result = workspace:Raycast(
+		configuredPosition + Vector3.new(0, 350, 0),
+		Vector3.new(0, -800, 0),
+		raycastParams
+	)
+
+	if result and result.Normal.Y >= 0.5 then
+		return Vector3.new(configuredPosition.X, result.Position.Y + NPC_ROOT_HEIGHT, configuredPosition.Z), facingAngle
+	end
+
+	warn(("[NPCSpawner] No ground found for %s at %s; using configured fallback"):format(
+		config.displayName,
+		tostring(configuredPosition)
+	))
+	return configuredPosition, facingAngle
+end
 
 local function buildR6Rig(config)
 	local model = Instance.new("Model")
@@ -246,12 +307,15 @@ end
 local activeRings = {}
 
 for _, config in NPC_CONFIGS do
-	local model = buildR6Rig(config)
-	local rootCFrame = CFrame.new(config.position) * CFrame.Angles(0, math.rad(config.facingAngle), 0)
+	local placedConfig = copyConfig(config)
+	placedConfig.position, placedConfig.facingAngle = resolveNPCSpawn(config)
 
-	createNameBillboard(model, config.displayName, config.roleText)
+	local model = buildR6Rig(placedConfig)
+	local rootCFrame = CFrame.new(placedConfig.position) * CFrame.Angles(0, math.rad(placedConfig.facingAngle), 0)
 
-	if config.hasQuestPrompt ~= false then
+	createNameBillboard(model, placedConfig.displayName, placedConfig.roleText)
+
+	if placedConfig.hasQuestPrompt ~= false then
 		local ring, innerRing = createGlowingRing(model, rootCFrame)
 		createProximityPrompt(model)
 		CollectionService:AddTag(model, "QuestGiver")
@@ -260,7 +324,7 @@ for _, config in NPC_CONFIGS do
 
 	model.Parent = npcsFolder
 
-	print("[NPCSpawner] Spawned " .. config.displayName .. " (" .. config.id .. ") at " .. tostring(config.position))
+	print("[NPCSpawner] Spawned " .. placedConfig.displayName .. " (" .. placedConfig.id .. ") at " .. tostring(placedConfig.position))
 end
 
 local elapsed = 0

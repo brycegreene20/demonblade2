@@ -13,9 +13,6 @@ local RaceModule = require(Modules:WaitForChild("RaceModule"))
 local Services = ServerScriptService:WaitForChild("Services")
 local DataStoreModule = require(Services:WaitForChild("DataStoreModule"))
 
--- Set to false once Robux purchasing is wired up
-local UNLIMITED_SPINS = true
-
 local random = Random.new()
 local regenLoops = {}
 
@@ -54,7 +51,11 @@ SpinRaceRemote.OnServerInvoke = function(player)
 	if not data then
 		return { Success = false, Message = "Player data is not ready" }
 	end
-	if not UNLIMITED_SPINS and not PlayerDataModule.consumeRaceSpin(player) then
+	local consumedSpin = false
+	if not RaceModule.UNLIMITED_SPINS then
+		consumedSpin = PlayerDataModule.consumeRaceSpin(player)
+	end
+	if not RaceModule.UNLIMITED_SPINS and not consumedSpin then
 		return {
 			Success = false,
 			Message = "No race spins remaining",
@@ -64,7 +65,9 @@ SpinRaceRemote.OnServerInvoke = function(player)
 
 	local race = RaceModule.roll(random:NextNumber())
 	if not PlayerDataModule.setRace(player, race.Id) then
-		data.RaceSpins += 1
+		if consumedSpin then
+			data.RaceSpins += 1
+		end
 		return { Success = false, Message = "Race roll could not be applied" }
 	end
 
@@ -77,8 +80,8 @@ SpinRaceRemote.OnServerInvoke = function(player)
 			.. " rolled "
 			.. race.Name
 			.. " ("
-			.. publicData.Spins
-			.. " spins remaining)"
+			.. (publicData.UnlimitedSpins and "unlimited spins" or (tostring(publicData.Spins) .. " spins remaining"))
+			.. ")"
 	)
 	return {
 		Success = true,
