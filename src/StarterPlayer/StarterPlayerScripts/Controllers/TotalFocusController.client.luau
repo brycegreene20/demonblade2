@@ -14,13 +14,13 @@ local TotalFocusRebirth = Remotes:WaitForChild("TotalFocusRebirth")
 local HALO_NAME = "TotalFocusHalo"
 local currentState = { active = false, tierIndex = 0, haloColor = Color3.fromRGB(0, 220, 80) }
 
-local function getHRP(): BasePart?
-	local char = LocalPlayer.Character
+local function getHRP(player: Player): BasePart?
+	local char = player.Character
 	return char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
 
-local function removeHalo()
-	local char = LocalPlayer.Character
+local function removeHalo(player: Player)
+	local char = player.Character
 	if not char then return end
 	local existing = char:FindFirstChild(HALO_NAME)
 	if existing then
@@ -28,11 +28,11 @@ local function removeHalo()
 	end
 end
 
-local function spawnHalo(color: Color3)
-	removeHalo()
-	local hrp = getHRP()
+local function spawnHalo(player: Player, color: Color3)
+	removeHalo(player)
+	local hrp = getHRP(player)
 	if not hrp then return end
-	local char = LocalPlayer.Character
+	local char = player.Character
 	if not char then return end
 
 	local halo = Instance.new("Part")
@@ -66,11 +66,19 @@ local function spawnHalo(color: Color3)
 	pulse()
 end
 
-local function applyVisuals()
-	if currentState.active and currentState.tierIndex > 0 then
-		spawnHalo(currentState.haloColor)
+local function applyVisuals(player: Player)
+	local active = player:GetAttribute("TotalFocusActive")
+	local tierIndex = tonumber(player:GetAttribute("TotalFocusTierIndex")) or 0
+	local haloColor = player:GetAttribute("TotalFocusHaloColor")
+	if player == LocalPlayer and active == nil then
+		active = currentState.active
+		tierIndex = currentState.tierIndex
+		haloColor = currentState.haloColor
+	end
+	if active == true and tierIndex > 0 then
+		spawnHalo(player, if typeof(haloColor) == "Color3" then haloColor else Color3.fromRGB(0, 220, 80))
 	else
-		removeHalo()
+		removeHalo(player)
 	end
 end
 
@@ -78,7 +86,7 @@ TotalFocusChanged.OnClientEvent:Connect(function(state: { active: boolean, tierI
 	currentState.active = state.active
 	currentState.tierIndex = state.tierIndex
 	currentState.haloColor = state.haloColor
-	applyVisuals()
+	applyVisuals(LocalPlayer)
 end)
 
 -- J (keyboard) or DPad Up (controller) to toggle
@@ -89,11 +97,25 @@ UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: 
 	end
 end)
 
--- Re-apply halo on respawn
-LocalPlayer.CharacterAdded:Connect(function()
-	task.wait(0.5)
-	applyVisuals()
-end)
+local function observePlayer(player: Player)
+	for _, attributeName in { "TotalFocusActive", "TotalFocusTierIndex", "TotalFocusHaloColor" } do
+		player:GetAttributeChangedSignal(attributeName):Connect(function()
+			applyVisuals(player)
+		end)
+	end
+	player.CharacterAdded:Connect(function()
+		task.wait(0.5)
+		applyVisuals(player)
+	end)
+	if player.Character then
+		task.defer(applyVisuals, player)
+	end
+end
+
+for _, player in Players:GetPlayers() do
+	observePlayer(player)
+end
+Players.PlayerAdded:Connect(observePlayer)
 
 -- selene: allow(global_usage)
 _G.TotalFocusController = {

@@ -12,6 +12,7 @@ local WorldSpawnConfigModule = require(Modules:WaitForChild("WorldSpawnConfigMod
 
 local DUMMY_HP = 500
 local DUMMY_XP_REWARD = 25
+local DUMMY_LEVEL = 1
 local RESPAWN_TIME = 3
 local FADE_TIME = 1
 local DEBUG_DUMMY_SPAWNS = false
@@ -65,7 +66,7 @@ end
 
 local function getRawSpawns()
 	local marker = getMarkerPart(DUMMY_YARD_MARKER_NAME)
-	if marker then
+	if marker and WorldSpawnConfigModule.DUMMY_GRID.useMarkerOverride then
 		local grid = WorldSpawnConfigModule.DUMMY_GRID
 		local columns = math.max(1, math.floor(getMarkerAttributeNumber(marker, "Columns", grid.columns)))
 		local rows = math.max(1, math.floor(getMarkerAttributeNumber(marker, "Rows", grid.rows)))
@@ -188,7 +189,7 @@ local function createHPBar(parent)
 	billboard.Size = UDim2.fromScale(BAR_WIDTH, BAR_HEIGHT)
 	billboard.StudsOffset = BAR_STUDS_OFFSET
 	billboard.AlwaysOnTop = true
-	billboard.MaxDistance = 60
+	billboard.MaxDistance = 300
 	billboard.LightInfluence = 0
 	billboard.Parent = parent
 
@@ -256,7 +257,7 @@ local function createHPBar(parent)
 	nameLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
 	nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
 	nameLabel.TextStrokeTransparency = 0.4
-	nameLabel.Text = "Training Dummy"
+	nameLabel.Text = "Training Dummy [Lv." .. DUMMY_LEVEL .. "]"
 	nameLabel.ZIndex = 4
 	nameLabel.Parent = bg
 
@@ -266,6 +267,7 @@ end
 local function spawnDummy(spawnCFrame)
 	local dummy = DummyTemplate:Clone()
 	dummy.Name = "TrainingDummy"
+	dummy.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 
 	local hrp = dummy:FindFirstChild("HumanoidRootPart")
 	if not hrp then
@@ -299,6 +301,7 @@ local function spawnDummy(spawnCFrame)
 	humanoid.BreakJointsOnDeath = false
 
 	dummy:SetAttribute("EnemyType", "TrainingDummy")
+	dummy:SetAttribute("Level", DUMMY_LEVEL)
 	dummy:SetAttribute("XPReward", DUMMY_XP_REWARD)
 
 	dummy:PivotTo(spawnCFrame)

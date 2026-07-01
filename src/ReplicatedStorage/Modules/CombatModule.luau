@@ -52,9 +52,9 @@ function CombatModule.isModelInSafeZone(model)
 	return isModelInSafeZone(model)
 end
 
-local function dispatchProgressionEvent(serviceName, service, player, eventName)
+local function dispatchProgressionEvent(serviceName, service, player, eventName, rewardMultiplier)
 	if not service or not service.grantEventXP then return end
-	local ok, dispatchError = pcall(service.grantEventXP, player, eventName)
+	local ok, dispatchError = pcall(service.grantEventXP, player, eventName, rewardMultiplier)
 	if ok then return end
 
 	local now = os.clock()
@@ -65,14 +65,14 @@ local function dispatchProgressionEvent(serviceName, service, player, eventName)
 	end
 end
 
-function CombatModule.grantStateProgressionEvent(player, eventName)
+function CombatModule.grantStateProgressionEvent(player, eventName, rewardMultiplier)
 	if not player then return end
 	-- These services register after startup; each dispatch is isolated so optional
 	-- progression can never interrupt damage, rewards, or defeated-model cleanup.
 	-- selene: allow(global_usage)
-	dispatchProgressionEvent("TotalFocus", shared and shared.TotalFocusServer, player, eventName)
+	dispatchProgressionEvent("TotalFocus", shared and shared.TotalFocusServer, player, eventName, rewardMultiplier)
 	-- selene: allow(global_usage)
-	dispatchProgressionEvent("SelflessState", shared and shared.SelflessStateServer, player, eventName)
+	dispatchProgressionEvent("SelflessState", shared and shared.SelflessStateServer, player, eventName, rewardMultiplier)
 end
 
 function CombatModule.canPlayerDamageTarget(attackerPlayer, targetModel)
@@ -91,6 +91,19 @@ function CombatModule.canPlayerDamageTarget(attackerPlayer, targetModel)
 			attackerLogs[targetPlayer] = now
 			friendlyFireLogTimes[attackerPlayer] = attackerLogs
 			print("[CombatModule] Blocked team friendly fire: " .. attackerPlayer.Name .. " -> " .. targetPlayer.Name)
+		end
+		return false
+	end
+	-- selene: allow(global_usage)
+	local clanService = shared and shared.ClanService
+	if clanService and clanService.areClanmates and clanService.areClanmates(attackerPlayer, targetPlayer) then
+		local now = os.clock()
+		local attackerLogs = friendlyFireLogTimes[attackerPlayer] or {}
+		local lastLog = attackerLogs[targetPlayer]
+		if not lastLog or now - lastLog >= FRIENDLY_FIRE_LOG_COOLDOWN then
+			attackerLogs[targetPlayer] = now
+			friendlyFireLogTimes[attackerPlayer] = attackerLogs
+			print("[CombatModule] Blocked clan friendly fire: " .. attackerPlayer.Name .. " -> " .. targetPlayer.Name)
 		end
 		return false
 	end
@@ -229,6 +242,11 @@ function CombatModule.applyDamage(targetModel, amount, attackerPlayer, isHeavyOr
 	if not CombatModule.canPlayerDamageTarget(attackerPlayer, targetModel) then return false end
 
 	local finalAmount = amount
+	local enemyDamageReduction = targetModel:GetAttribute("DamageReduction")
+	if enemyDamageReduction ~= nil then
+		local EnemyProgressionModule = require(Modules:WaitForChild("EnemyProgressionModule"))
+		finalAmount = EnemyProgressionModule.applyDamageReduction(finalAmount, enemyDamageReduction)
+	end
 	if CombatModule.isBlocking(targetModel) then
 		local reduction = isHeavyOrSkill and CombatModule.BLOCK_HEAVY_REDUCTION or CombatModule.BLOCK_REDUCTION
 		finalAmount = amount * (1 - reduction)

@@ -194,7 +194,12 @@ local function createSafeZone(marker, index)
 	local bubbleDiameter = math.max(safeZoneSize.X, safeZoneSize.Z)
 	bubble.Shape = Enum.PartType.Ball
 	bubble.Size = Vector3.new(bubbleDiameter, bubbleDiameter, bubbleDiameter)
-	bubble.CFrame = CFrame.new(safeZoneCenter.X, groundY + bubbleDiameter * 0.5, safeZoneCenter.Z)
+	-- Centering the sphere at ground level leaves only its upper hemisphere visible.
+	bubble.CFrame = CFrame.new(
+		safeZoneCenter.X,
+		groundY + WorldSpawnConfigModule.SAFE_ZONE.bubbleCenterGroundOffset,
+		safeZoneCenter.Z
+	)
 	bubble.Anchored = true
 	bubble.CanCollide = false
 	bubble.CanQuery = false
@@ -209,7 +214,7 @@ local function createSafeZone(marker, index)
 	end
 	label.Name = "SafeZoneLabel"
 	label.Size = UDim2.fromOffset(220, 44)
-	label.StudsOffset = Vector3.new(0, 8, 0)
+	label.StudsOffset = Vector3.new(0, bubbleDiameter * 0.42, 0)
 	label.AlwaysOnTop = true
 	label.MaxDistance = 120
 	label.Parent = bubble

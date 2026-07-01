@@ -249,8 +249,26 @@ TeamInviteResponseRemote.OnServerEvent:Connect(function(player, inviterUserId, a
 	print("[TeamService] " .. player.Name .. " joined " .. team.Leader.Name .. "'s team")
 end)
 
-TeamLeaveRemote.OnServerEvent:Connect(function(player)
-	removeFromTeam(player, "You left the team")
+TeamLeaveRemote.OnServerEvent:Connect(function(player, targetUserId)
+	if targetUserId == nil then
+		removeFromTeam(player, "You left the team")
+		return
+	end
+
+	local target = Players:GetPlayerByUserId(tonumber(targetUserId) or 0)
+	local team = getTeam(player)
+	local targetTeam = target and getTeam(target)
+	local canRemove = target
+		and team
+		and team == targetTeam
+		and TeamModule.canRemoveMember(player == team.Leader, target == team.Leader, true)
+	if not canRemove then
+		sendUpdate(player, "Only the team leader can remove another member")
+		return
+	end
+
+	removeFromTeam(target, target.DisplayName .. " was removed from the team")
+	print(("[TeamService] %s removed %s from the team"):format(player.Name, target.Name))
 end)
 
 Players.PlayerAdded:Connect(function(player)

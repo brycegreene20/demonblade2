@@ -43,11 +43,14 @@ local function fireUpdate(player: Player)
 	local now = os.clock()
 	local activeRemaining = activePlayers[player] and math.max(0, (activeExpiresAt[player] or now) - now) or 0
 	local cooldownRemaining = math.max(0, (cooldownUntil[player] or now) - now)
+	local active = isCurrentlyActive(player)
+	player:SetAttribute("SelflessStateActive", active)
+	player:SetAttribute("SelflessStateTier", tier)
 	SelflessStateChanged:FireClient(player, {
 		xp = xp,
 		tier = tier,
 		bonus = bonus,
-		active = isCurrentlyActive(player),
+		active = active,
 		activeRemaining = activeRemaining,
 		activeDuration = SelflessStateModule.ACTIVE_DURATION,
 		cooldownRemaining = cooldownRemaining,
@@ -79,8 +82,9 @@ local function grantXP(player: Player, amount: number)
 	return true, newXP
 end
 
-local function grantEventXP(player: Player, eventName: string)
-	local amount = SelflessStateModule.getXPForEvent(eventName)
+local function grantEventXP(player: Player, eventName: string, rewardMultiplier: number?)
+	local multiplier = math.max(0, tonumber(rewardMultiplier) or 1)
+	local amount = math.floor(SelflessStateModule.getXPForEvent(eventName) * multiplier + 0.5)
 	local granted, xp = grantXP(player, amount)
 	if DEBUG_KILL_XP and granted and xp and eventName == "Kill" then
 		print(("[SelflessStateServer] %s gained %d kill XP (%d total)"):format(player.Name, amount, xp))
@@ -154,6 +158,7 @@ Players.PlayerRemoving:Connect(function(player: Player)
 end)
 
 Players.PlayerAdded:Connect(function(player: Player)
+	player:SetAttribute("SelflessStateActive", false)
 	player.CharacterAdded:Connect(function()
 		activePlayers[player] = false
 		activeExpiresAt[player] = nil

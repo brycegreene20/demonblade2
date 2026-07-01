@@ -633,7 +633,7 @@ local STAT_DEFS = {
 	{key = "Damage", display = "Damage", desc = "+3% damage for every combat style", color = Color3.fromRGB(220, 105, 80)},
 	{key = "Health", display = "Health", desc = "+15 max HP per point", color = Color3.fromRGB(220, 60, 60)},
 	{key = "Defense", display = "Defense", desc = "Reduce damage taken (cap 64%)", color = Color3.fromRGB(180, 160, 60)},
-	{key = "StaminaStat", display = "Stamina", desc = "+5 max stamina per point", color = Color3.fromRGB(60, 180, 220)},
+	{key = "StaminaStat", display = "Stamina", desc = "+5 max and +0.8 regen per point", color = Color3.fromRGB(60, 180, 220)},
 	{key = "MovementSpeed", display = "Speed", desc = "+0.5 walk speed per point", color = Color3.fromRGB(80, 220, 140)},
 }
 
@@ -1018,7 +1018,8 @@ local function updateStatPanel()
 			rowData.DerivedLabel.Text = string.format("-%.0f%%", defMult * 100)
 		elseif key == "StaminaStat" then
 			local maxStam = cachedStatData.DerivedMaxStamina or (100 + points * 5)
-			rowData.DerivedLabel.Text = "Stam: " .. math.floor(maxStam)
+			local regen = cachedStatData.DerivedStaminaRegen or (12 + points * 0.8)
+			rowData.DerivedLabel.Text = string.format("%d / %.1f/s", math.floor(maxStam), regen)
 		elseif key == "MovementSpeed" then
 			local ws = cachedStatData.DerivedWalkSpeed or math.min(24 + points * 0.5, 40)
 			rowData.DerivedLabel.Text = string.format("WS: %.1f", ws)
@@ -1174,10 +1175,15 @@ end
 
 -- ==================== STAT POINTS HINT (on HUD) ====================
 local HUD_ACTION_ICON_SIZE = 32
+local HUD_STAT_BUTTON_WIDTH = 52
 local HUD_ACTION_ICON_GAP = 8
 local HUD_ACTION_ICON_BASE_X = 20
 local HUD_ACTION_ICON_Y = -BOTTOM_OFFSET - container.Size.Y.Offset - 6
-local HUD_ACTION_PANEL_X = HUD_ACTION_ICON_BASE_X + (HUD_ACTION_ICON_SIZE * 3) + (HUD_ACTION_ICON_GAP * 3) + 10
+local HUD_ACTION_PANEL_X = HUD_ACTION_ICON_BASE_X
+	+ HUD_STAT_BUTTON_WIDTH
+	+ (HUD_ACTION_ICON_SIZE * 2)
+	+ (HUD_ACTION_ICON_GAP * 3)
+	+ 10
 
 local statHint = Instance.new("TextLabel")
 statHint.Name = "StatHint"
@@ -1198,8 +1204,19 @@ statHint.Parent = screenGui
 local function updateStatHint()
 	if cachedStatPoints > 0 then
 		local mode = ReplicatedStorage:FindFirstChild("InputMode") and ReplicatedStorage.InputMode.Value
-		local key = (mode == "Xbox" or mode == "PlayStation") and "Stats icon" or "P"
-		statHint.Text = cachedStatPoints .. " stat point" .. (cachedStatPoints > 1 and "s" or "") .. " available [" .. key .. "]"
+		local actionText
+		if UserInputService.TouchEnabled then
+			actionText = "Tap STATS"
+		elseif mode == "Xbox" or mode == "PlayStation" then
+			actionText = "Open STATS"
+		else
+			actionText = "Press P"
+		end
+		statHint.Text = cachedStatPoints
+			.. " stat point"
+			.. (cachedStatPoints > 1 and "s" or "")
+			.. " available - "
+			.. actionText
 		statHint.Visible = true
 	else
 		statHint.Visible = false
@@ -1210,15 +1227,15 @@ end
 local STAT_ICON_SIZE = HUD_ACTION_ICON_SIZE
 local statIconBtn = Instance.new("TextButton")
 statIconBtn.Name = "StatIconBtn"
-statIconBtn.Size = UDim2.fromOffset(STAT_ICON_SIZE, STAT_ICON_SIZE)
+statIconBtn.Size = UDim2.fromOffset(HUD_STAT_BUTTON_WIDTH, STAT_ICON_SIZE)
 statIconBtn.Position = UDim2.new(0, HUD_ACTION_ICON_BASE_X, 1, HUD_ACTION_ICON_Y)
 statIconBtn.AnchorPoint = Vector2.new(0, 1)
 statIconBtn.BackgroundColor3 = Color3.fromRGB(20, 24, 32)
 statIconBtn.BackgroundTransparency = 0.2
 statIconBtn.BorderSizePixel = 0
-statIconBtn.Text = "✚"
+statIconBtn.Text = "STATS"
 statIconBtn.TextColor3 = Color3.fromRGB(220, 205, 255)
-statIconBtn.TextSize = 18
+statIconBtn.TextSize = 11
 statIconBtn.Font = Enum.Font.GothamBold
 statIconBtn.AutoButtonColor = false
 statIconBtn.ZIndex = 6
@@ -1251,7 +1268,7 @@ statIconTooltip.TextSize = 11
 statIconTooltip.TextColor3 = Color3.fromRGB(200, 200, 220)
 statIconTooltip.TextStrokeColor3 = SHADOW_COLOR
 statIconTooltip.TextStrokeTransparency = 0.5
-statIconTooltip.Text = "Character Stats"
+statIconTooltip.Text = "Upgrade Stats"
 statIconTooltip.Visible = false
 statIconTooltip.ZIndex = 7
 statIconTooltip.Parent = statIconBtn
@@ -1347,7 +1364,7 @@ do
 	btn.Name = "TitleIconBtn"
 	btn.Size = UDim2.fromOffset(STAT_ICON_SIZE, STAT_ICON_SIZE)
 	btn.Position = UDim2.new(
-		0, HUD_ACTION_ICON_BASE_X + STAT_ICON_SIZE + HUD_ACTION_ICON_GAP,
+		0, HUD_ACTION_ICON_BASE_X + HUD_STAT_BUTTON_WIDTH + HUD_ACTION_ICON_GAP,
 		1, HUD_ACTION_ICON_Y
 	)
 	btn.AnchorPoint = Vector2.new(0, 1)
@@ -1428,7 +1445,12 @@ do
 	btn.Name = "InventoryIconBtn"
 	btn.Size = UDim2.fromOffset(STAT_ICON_SIZE, STAT_ICON_SIZE)
 	btn.Position = UDim2.new(
-		0, HUD_ACTION_ICON_BASE_X + (STAT_ICON_SIZE + HUD_ACTION_ICON_GAP) * 2,
+		0,
+		HUD_ACTION_ICON_BASE_X
+			+ HUD_STAT_BUTTON_WIDTH
+			+ HUD_ACTION_ICON_GAP
+			+ STAT_ICON_SIZE
+			+ HUD_ACTION_ICON_GAP,
 		1, HUD_ACTION_ICON_Y
 	)
 	btn.AnchorPoint = Vector2.new(0, 1)
@@ -2088,7 +2110,10 @@ RespecResultRemote.OnClientEvent:Connect(function(success, msg, cooldownEnd)
 	end
 end)
 
-DataLoadError.OnClientEvent:Connect(function()
+local dataLoadErrorToken = 0
+local function showDataLoadError()
+	dataLoadErrorToken += 1
+	local token = dataLoadErrorToken
 	errorBanner.Visible = true
 	errorBanner.Position = UDim2.new(0.5, 0, 0, -60)
 	TweenService:Create(errorBanner, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
@@ -2096,14 +2121,30 @@ DataLoadError.OnClientEvent:Connect(function()
 	}):Play()
 
 	task.delay(10, function()
+		if token ~= dataLoadErrorToken then return end
 		TweenService:Create(errorBanner, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 			Position = UDim2.new(0.5, 0, 0, -60),
 		}):Play()
 		task.delay(0.35, function()
-			errorBanner.Visible = false
+			if token == dataLoadErrorToken then
+				errorBanner.Visible = false
+			end
 		end)
 	end)
-end)
+end
+
+DataLoadError.OnClientEvent:Connect(showDataLoadError)
+
+local persistenceState = LocalPlayer:GetAttribute("DataPersistenceAvailable")
+if persistenceState == false then
+	task.defer(showDataLoadError)
+elseif persistenceState == nil then
+	LocalPlayer:GetAttributeChangedSignal("DataPersistenceAvailable"):Once(function()
+		if LocalPlayer:GetAttribute("DataPersistenceAvailable") == false then
+			showDataLoadError()
+		end
+	end)
+end
 
 if ZoneChangedRemote then
 	ZoneChangedRemote.OnClientEvent:Connect(function(newZone)
@@ -3043,7 +3084,8 @@ initMasteryBarSystem()
 -- ─── Total Focus & Selfless State panels (bottom-right) ───────────────────
 
 do
-local PANEL_W    = 180
+local IS_TOUCH   = UserInputService.TouchEnabled
+local PANEL_W    = if IS_TOUCH then 160 else 180
 local PANEL_PAD  = 8
 local PANEL_BG2  = Color3.fromRGB(10, 12, 16)
 local BAR_BG2    = Color3.fromRGB(30, 32, 40)
@@ -3162,7 +3204,7 @@ end
 local tfAccent = Color3.fromRGB(0, 220, 80)
 local tfPanel, tfXpFill, tfXpText, tfBtn = makeAbilityPanel(100, "TOTAL FOCUS", tfAccent)
 local tfTierLabel = tfPanel:FindFirstChild("TierLabel") :: TextLabel
-tfBtn.Text = "ACTIVATE  [J / D-UP]"
+tfBtn.Text = if IS_TOUCH then "ACTIVATE" else "ACTIVATE  [J / D-UP]"
 
 local tfRebirthBtn = Instance.new("TextButton")
 tfRebirthBtn.Size = UDim2.fromOffset(PANEL_W - PANEL_PAD * 2, 14)
@@ -3214,10 +3256,10 @@ TotalFocusChanged.OnClientEvent:Connect(function(state)
 	end
 
 	if state.active then
-		tfBtn.Text = "DEACTIVATE  [J / D-UP]"
+		tfBtn.Text = if IS_TOUCH then "DEACTIVATE" else "DEACTIVATE  [J / D-UP]"
 		tfBtn.BackgroundTransparency = 0.2
 	else
-		tfBtn.Text = "ACTIVATE  [J / D-UP]"
+		tfBtn.Text = if IS_TOUCH then "ACTIVATE" else "ACTIVATE  [J / D-UP]"
 		tfBtn.BackgroundTransparency = 0.55
 	end
 end)
@@ -3228,7 +3270,7 @@ local ssPanel, ssXpFill, ssXpText, ssBtn = makeAbilityPanel(0, "SELFLESS STATE",
 local ssTierLabel = ssPanel:FindFirstChild("TierLabel") :: TextLabel
 ssPanel.Size = UDim2.fromOffset(PANEL_W, 88)
 ssBtn.Position = UDim2.fromOffset(PANEL_PAD, 68)
-ssBtn.Text = "ACTIVATE  [C / D-DN]"
+ssBtn.Text = if IS_TOUCH then "ACTIVATE" else "ACTIVATE  [C / D-DN]"
 
 local ssTimerLabel = Instance.new("TextLabel")
 ssTimerLabel.Name = "StateTimer"
@@ -3241,6 +3283,13 @@ ssTimerLabel.TextColor3 = Color3.fromRGB(215, 230, 255)
 ssTimerLabel.TextXAlignment = Enum.TextXAlignment.Left
 ssTimerLabel.Text = "READY"
 ssTimerLabel.Parent = ssPanel
+
+if IS_TOUCH then
+	tfPanel.AnchorPoint = Vector2.new(0, 0)
+	tfPanel.Position = UDim2.new(1, -(PANEL_W + 10), 0, 104)
+	ssPanel.AnchorPoint = Vector2.new(0, 0)
+	ssPanel.Position = UDim2.new(1, -(PANEL_W + 10), 0, 184)
+end
 
 ssBtn.MouseButton1Click:Connect(function()
 	SelflessStateToggle:FireServer()
@@ -3265,7 +3314,7 @@ local function updateSelflessTimerUI()
 	if ssTimerState.active and activeRemaining > 0 then
 		ssTimerLabel.Text = "ACTIVE  " .. formatSelflessSeconds(activeRemaining) .. " LEFT"
 		ssTimerLabel.TextColor3 = Color3.fromRGB(210, 245, 255)
-		ssBtn.Text = "DEACTIVATE  [C / D-DN]"
+		ssBtn.Text = if IS_TOUCH then "DEACTIVATE" else "DEACTIVATE  [C / D-DN]"
 		ssBtn.BackgroundTransparency = 0.2
 	elseif cooldownRemaining > 0 then
 		ssTimerState.active = false
@@ -3277,7 +3326,7 @@ local function updateSelflessTimerUI()
 		ssTimerState.active = false
 		ssTimerLabel.Text = "READY"
 		ssTimerLabel.TextColor3 = Color3.fromRGB(170, 235, 190)
-		ssBtn.Text = "ACTIVATE  [C / D-DN]"
+		ssBtn.Text = if IS_TOUCH then "ACTIVATE" else "ACTIVATE  [C / D-DN]"
 		ssBtn.BackgroundTransparency = 0.55
 	end
 end

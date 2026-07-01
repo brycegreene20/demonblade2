@@ -80,6 +80,23 @@ For code changes:
 3. Test in Studio.
 4. Commit the repo changes.
 
+### Persistent player data in Studio
+
+Studio DataStore access is disabled by default. To verify that levels, inventory,
+mastery, titles, race, bounty, and stats survive a leave/rejoin test:
+
+1. Use the published local or staging test experience, never production.
+2. In Studio, open `File > Experience Settings > Security`.
+3. Enable `Enable Studio Access to API Services`.
+4. Save the setting, start a play test, change progress, stop, and rejoin.
+5. Confirm the Output contains `[DataStoreModule] Saved data for ...` when leaving
+   and `[DataStoreModule] Loaded data for ...` when rejoining.
+
+Data stores are shared by every place in the same experience. Keep local/staging
+and production in separate experiences so Studio testing cannot overwrite live
+player data. If loading fails, this project allows play with defaults but blocks
+saving for that session to protect the previously stored data.
+
 For complex managed assets outside `Workspace`:
 
 1. Edit or prototype in Studio.
@@ -340,13 +357,28 @@ Demon Blade 2 Publish: manually published after main validation
 
 Local development should not publish directly to production.
 
+### What a branch merge deploys
+
+The Git branch determines the target Roblox environment for the next code deployment:
+
+| Merged branch | Code target | Manual map target |
+| --- | --- | --- |
+| `dev` | Staging Env - Demon Blade 2 | Staging Env - Demon Blade 2 |
+| `main` | Demon Blade 2 Publish | Demon Blade 2 Publish |
+
+A code merge contains the Rojo-managed scripts and assets, but it does not contain or deploy the Studio-owned snowy `Workspace` map. The current GitHub workflow validates and builds the code; it does not publish a complete Roblox place.
+
+After the most recent merge, a developer must open the matching existing Roblox environment in Studio, sync the merged branch through Rojo, confirm that the correct current map is loaded, and manually use **File > Publish to Roblox** for that same environment. Never publish `dev` changes to production or `main` changes to staging.
+
 ### Map-preserving publish flow
 
-1. Open the existing snowy staging or production place from Roblox.
-2. Run `rojo serve default.project.json`.
-3. Connect Rojo and verify that `Workspace` is unchanged.
-4. Test the game in Studio.
-5. Use **File > Publish to Roblox** for that same place.
+1. Check out the merged target branch: `dev` for staging or `main` for production.
+2. Open the matching existing snowy staging or production place from Roblox.
+3. Confirm that this place contains the latest approved map.
+4. Run `rojo serve default.project.json`.
+5. Connect Rojo and verify that `Workspace` is unchanged.
+6. Test the combined map and merged code in Studio.
+7. Use **File > Publish to Roblox** for that same place.
 
 Do not use `rojo upload default.project.json`. It publishes a complete code-only place and cannot preserve a `Workspace` that is intentionally owned only by Studio.
 

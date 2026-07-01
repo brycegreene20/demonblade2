@@ -158,6 +158,40 @@ local SelflessStateModule = loadModule("src/ReplicatedStorage/Modules/SelflessSt
 local MovementPhysicsModule = loadModule("src/ReplicatedStorage/Modules/MovementPhysicsModule.luau")
 local QuestTargetModule = loadModule("src/ReplicatedStorage/Modules/QuestTargetModule.luau")
 local WorldSpawnConfigModule = loadModule("src/ReplicatedStorage/Modules/WorldSpawnConfigModule.luau")
+local CombatVFXConfigModule = loadModule("src/ReplicatedStorage/Modules/CombatVFXConfigModule.luau")
+local EnemyProgressionModule = loadModule("src/ReplicatedStorage/Modules/EnemyProgressionModule.luau")
+local DataPersistencePolicyModule = loadModule("src/ReplicatedStorage/Modules/DataPersistencePolicyModule.luau")
+local ClanModule = loadModule("src/ReplicatedStorage/Modules/ClanModule.luau")
+
+test("persistence policy permits writes only after a successful load", function()
+	expectEqual(DataPersistencePolicyModule.canWrite(true), true, "successful load can save")
+	expectEqual(DataPersistencePolicyModule.canWrite(false), false, "failed load cannot overwrite stored data")
+	expectEqual(DataPersistencePolicyModule.canWrite(nil), false, "unknown load state cannot save")
+end)
+
+test("persistence snapshots are isolated from live player data", function()
+	local liveData = {
+		Level = 8,
+		Inventory = { "WaterBreathingScroll" },
+		Mastery = {
+			WaterBreathing = { Level = 4, XP = 72 },
+		},
+	}
+	local snapshot = DataPersistencePolicyModule.copySnapshot(liveData)
+
+	liveData.Level = 9
+	liveData.Inventory[1] = "FlameBreathingScroll"
+	liveData.Mastery.WaterBreathing.XP = 99
+
+	expectEqual(snapshot.Level, 8, "snapshot scalar")
+	expectEqual(snapshot.Inventory[1], "WaterBreathingScroll", "snapshot list")
+	expectEqual(snapshot.Mastery.WaterBreathing.XP, 72, "snapshot nested table")
+end)
+
+test("persistence policy keeps autosave active for play-test sessions", function()
+	expectTruthy(DataPersistencePolicyModule.AUTO_SAVE_INTERVAL > 0, "autosave interval")
+	expectTruthy(DataPersistencePolicyModule.MIN_WRITE_INTERVAL > 0, "write throttle")
+end)
 
 test("default Demon Slayer title maps to a playable Slayer identity", function()
 	local title = TitleModule.getTitle("DemonSlayer")
@@ -447,6 +481,12 @@ test("quest routing keeps dummies on Urokodaki and demons on Corps Officer", fun
 			quest.id .. " is a demon quest"
 		)
 	end
+	for index = 2, #officerQuests do
+		expectTruthy(
+			officerQuests[index - 1].xpReward <= officerQuests[index].xpReward,
+			"officer quests ordered by XP reward"
+		)
+	end
 end)
 
 test("Demon Boss quest is routed to the Corps Officer", function()
@@ -507,17 +547,76 @@ end)
 test("team policy blocks friendly fire and allows non-team PvP", function()
 	expectEqual(TeamModule.canDamagePlayer(true), false, "teammate damage blocked")
 	expectEqual(TeamModule.canDamagePlayer(false), true, "non-team damage allowed")
+	expectEqual(TeamModule.canRemoveMember(true, false, true), true, "leader can remove teammate")
+	expectEqual(TeamModule.canRemoveMember(false, false, true), false, "member cannot remove teammate")
+	expectEqual(TeamModule.canRemoveMember(true, true, true), false, "leader cannot remove self")
+	expectEqual(TeamModule.canRemoveMember(true, false, false), false, "leader cannot remove outsider")
+end)
+
+test("quest level requirements lock acceptance until the player reaches the requirement", function()
+	local bossQuest = QuestDataModule.getQuest("frost_boss_01")
+	local lowEnough, requiredLevel, currentLevel = QuestDataModule.meetsLevelRequirement(bossQuest, 7)
+	expectEqual(lowEnough, false, "under-level player locked")
+	expectEqual(requiredLevel, 8, "quest required level")
+	expectEqual(currentLevel, 7, "reported player level")
+	local highEnough = QuestDataModule.meetsLevelRequirement(bossQuest, 8)
+	expectEqual(highEnough, true, "required level unlocks quest")
+end)
+
+test("clan levels advance from prestige and cap at level eight", function()
+	expectEqual(ClanModule.getLevel(0), 1, "new clan level")
+	expectEqual(ClanModule.getLevel(4999), 1, "level two remains a meaningful clan goal")
+	expectEqual(ClanModule.getLevel(5000), 2, "second clan level")
+	expectEqual(ClanModule.getLevel(650000), 8, "maximum clan level")
+	expectEqual(ClanModule.getLevel(999999), 8, "clan level cap")
+	expectEqual(ClanModule.getNextLevelPrestige(650000), nil, "max level has no next threshold")
+end)
+
+test("nearby clan bonuses stack predictably and respect caps", function()
+	local solo = ClanModule.getProximityBonuses(0)
+	local pair = ClanModule.getProximityBonuses(1)
+	local crowded = ClanModule.getProximityBonuses(100)
+	expectNear(solo.XPMultiplier, 1, 0.000001, "solo clan XP")
+	expectNear(pair.XPMultiplier, 1.05, 0.000001, "one nearby clanmate XP")
+	expectNear(pair.DamageMultiplier, 1.04, 0.000001, "one nearby clanmate damage")
+	expectNear(crowded.XPMultiplier, 1.20, 0.000001, "clan XP cap")
+	expectNear(crowded.DamageMultiplier, 1.16, 0.000001, "clan damage cap")
+end)
+
+test("clan creation rules reject unsafe names", function()
+	local valid, normalized = ClanModule.isValidName("  Water Hashira  ")
+	expectEqual(valid, true, "valid clan name")
+	expectEqual(normalized, "Water Hashira", "trimmed clan name")
+	local invalidSymbols = ClanModule.isValidName("Bad<script>")
+	expectEqual(invalidSymbols, false, "symbol-heavy clan name rejected")
+	local tooShort = ClanModule.isValidName("AB")
+	expectEqual(tooShort, false, "short clan name rejected")
+end)
+
+test("clan achievements reward the clan and every member", function()
+	for _, achievement in ipairs(ClanModule.ACHIEVEMENTS) do
+		expectTruthy(achievement.Goal > 0, achievement.Id .. " goal")
+		expectTruthy(achievement.PrestigeReward > 0, achievement.Id .. " clan prestige reward")
+		expectTruthy(
+			achievement.MemberReputationReward > 0,
+			achievement.Id .. " member reputation reward"
+		)
+	end
 end)
 
 test("combat target policy consults live team membership", function()
 	local attacker = { Name = "Attacker" }
 	local teammate = { Name = "Teammate" }
+	local clanmate = { Name = "Clanmate" }
 	local opponent = { Name = "Opponent" }
 	local teammateModel = {}
+	local clanmateModel = {}
 	local opponentModel = {}
 	local playersService = game:GetService("Players")
 	playersService.GetPlayerFromCharacter = function(_self, model)
-		return model == teammateModel and teammate or opponent
+		if model == teammateModel then return teammate end
+		if model == clanmateModel then return clanmate end
+		return opponent
 	end
 	shared = { -- selene: allow(incorrect_standard_library_use, global_usage)
 		TeamService = {
@@ -525,9 +624,15 @@ test("combat target policy consults live team membership", function()
 				return a == attacker and b == teammate
 			end,
 		},
+		ClanService = {
+			areClanmates = function(a, b)
+				return a == attacker and b == clanmate
+			end,
+		},
 	}
 
 	expectEqual(CombatModule.canPlayerDamageTarget(attacker, teammateModel), false, "teammate target rejected")
+	expectEqual(CombatModule.canPlayerDamageTarget(attacker, clanmateModel), false, "clanmate target rejected")
 	expectEqual(CombatModule.canPlayerDamageTarget(attacker, opponentModel), true, "opponent target accepted")
 end)
 
@@ -640,6 +745,7 @@ test("race buffs scale all derived stats", function()
 	local base = {
 		maxHP = 150,
 		maxStamina = 100,
+		staminaRegen = 12,
 		walkSpeed = 24,
 		damageMultiplier = 1.2,
 		defenseMultiplier = 0.1,
@@ -647,10 +753,22 @@ test("race buffs scale all derived stats", function()
 	local sun = RaceModule.applyToStats(base, "Sun")
 	expectNear(sun.maxHP, 300, 0.000001, "Sun health")
 	expectNear(sun.maxStamina, 200, 0.000001, "Sun stamina")
+	expectNear(sun.staminaRegen, 24, 0.000001, "Sun stamina regeneration")
 	expectNear(sun.walkSpeed, 48, 0.000001, "Sun speed")
 	expectNear(sun.damageMultiplier, 2.4, 0.000001, "Sun damage")
 	local demonKing = RaceModule.getRace("DemonKing")
 	expectNear(demonKing.HealthRegenPercent, 0.20, 0.000001, "Demon King regeneration")
+end)
+
+test("stamina upgrades increase both capacity and regeneration", function()
+	expectNear(StatConfig.getMaxStamina(0), 100, 0.000001, "base stamina capacity")
+	expectNear(StatConfig.getMaxStamina(10), 150, 0.000001, "upgraded stamina capacity")
+	expectNear(StatConfig.getStaminaRegen(0), 12, 0.000001, "base stamina regeneration")
+	expectNear(StatConfig.getStaminaRegen(10), 20, 0.000001, "upgraded stamina regeneration")
+	expectTruthy(
+		StatConfig.getStaminaRegen(10) > StatConfig.getStaminaRegen(1),
+		"stamina regeneration grows with invested points"
+	)
 end)
 
 test("development race spins are explicitly unlimited in public data", function()
@@ -675,6 +793,17 @@ test("Total Focus and Selfless State use distinct combat XP parameters", functio
 	expectEqual(SelflessStateModule.getXPForEvent("Unknown"), 0, "unknown Selfless event")
 end)
 
+test("Total Focus stamina drain increases at every progression tier", function()
+	local previousDrain = 0
+	for _, tier in ipairs(TotalFocusModule.TIERS) do
+		local drain = TotalFocusModule.getStaminaDrainPerSecond(tier.xp)
+		expectTruthy(drain > previousDrain, tier.name .. " stamina drain increases")
+		previousDrain = drain
+	end
+	expectEqual(TotalFocusModule.getStaminaDrainPerSecond(0), 6, "V1 stamina drain per second")
+	expectEqual(TotalFocusModule.getStaminaDrainPerSecond(50000), 10, "V5 stamina drain per second")
+end)
+
 test("Selfless State exposes timed regen cooldown and defense buffs", function()
 	expectEqual(SelflessStateModule.ACTIVE_DURATION, 20, "Selfless active window")
 	expectEqual(SelflessStateModule.COOLDOWN_DURATION, 20, "Selfless reuse cooldown")
@@ -685,6 +814,54 @@ test("Selfless State exposes timed regen cooldown and defense buffs", function()
 	expectNear(SelflessStateModule.getCooldownMultiplier(10), 0.45, 0.000001, "V10 cooldown multiplier cap")
 	expectNear(SelflessStateModule.getDefenseBonusForTier(10), 0.55, 0.000001, "V10 defense bonus")
 	expectEqual(SelflessStateModule.MAX_DEFENSE_MULTIPLIER, 0.85, "Selfless defense cap")
+end)
+
+test("stronger enemies grant progressively larger mastery and active-state rewards", function()
+	expectTruthy(
+		EnemyProgressionModule.getMasteryXP(8, false) > EnemyProgressionModule.getMasteryXP(1, false),
+		"higher level mastery reward"
+	)
+	expectTruthy(
+		EnemyProgressionModule.getMasteryXP(12, true) > EnemyProgressionModule.getMasteryXP(12, false),
+		"boss mastery bonus"
+	)
+	expectTruthy(
+		EnemyProgressionModule.scaleStateXP(10, 8, false) > EnemyProgressionModule.scaleStateXP(10, 1, false),
+		"higher level Focus/Selfless reward"
+	)
+	expectTruthy(
+		EnemyProgressionModule.scaleStateXP(10, 12, true) > EnemyProgressionModule.scaleStateXP(10, 12, false),
+		"boss Focus/Selfless bonus"
+	)
+end)
+
+test("enemy levels scale health damage rewards and mitigation", function()
+	local levelOne = EnemyProgressionModule.getCombatStats(1, false)
+	local levelFive = EnemyProgressionModule.getCombatStats(5, false)
+	local levelTen = EnemyProgressionModule.getCombatStats(10, false)
+	expectTruthy(levelFive.hp > levelOne.hp, "level five health")
+	expectTruthy(levelTen.hp > levelFive.hp, "level ten health")
+	expectTruthy(levelFive.damage > levelOne.damage, "level five damage")
+	expectTruthy(levelTen.xp > levelFive.xp, "level ten reward")
+	expectTruthy(levelTen.damageReduction > levelFive.damageReduction, "level ten mitigation")
+	expectEqual(levelTen.hp, 476, "level ten health tuning")
+	expectEqual(levelTen.damage, 30, "level ten damage tuning")
+end)
+
+test("frost variants and bosses are stronger at the same enemy level", function()
+	local normal = EnemyProgressionModule.getCombatStats(8, false, 1)
+	local frost = EnemyProgressionModule.getCombatStats(8, false, 1.12)
+	local boss = EnemyProgressionModule.getCombatStats(8, true, 1)
+	expectTruthy(frost.hp > normal.hp, "frost health modifier")
+	expectTruthy(frost.damage > normal.damage, "frost damage modifier")
+	expectTruthy(boss.hp > normal.hp, "boss health modifier")
+	expectTruthy(boss.damageReduction > normal.damageReduction, "boss mitigation modifier")
+	expectNear(
+		EnemyProgressionModule.applyDamageReduction(100, normal.damageReduction),
+		100 * (1 - normal.damageReduction),
+		0.000001,
+		"enemy mitigation application"
+	)
 end)
 
 -- ==================== Movement physics ====================
@@ -730,32 +907,37 @@ test("quest compass selects the first unfinished kill objective", function()
 end)
 
 -- ==================== World spawn layout ====================
-test("snowfield demons are grouped by level and isolated from training dummies", function()
+test("forest demons are grouped by named region and isolated from training dummies", function()
 	local demons = WorldSpawnConfigModule.getDemonSpawns()
 	local dummies = WorldSpawnConfigModule.getTrainingDummySpawns()
-	expectEqual(#demons, 26, "regular demons plus boss count")
-	expectEqual(#dummies, 12, "training dummy count")
+	expectEqual(#demons, 35, "regular demons plus boss count")
+	expectEqual(#dummies, 12, "two six-dummy training grids")
 
 	local grouped = {}
 	for _, demon in ipairs(demons) do
 		if not demon.boss then
-			grouped[demon.level] = grouped[demon.level] or {}
-			table.insert(grouped[demon.level], demon)
+			grouped[demon.zone] = grouped[demon.zone] or {}
+			table.insert(grouped[demon.zone], demon)
+			expectEqual(
+				WorldSpawnConfigModule.getDemonExclusionZone(demon.x, demon.z),
+				nil,
+				("demon spawn %s outside protected training yard"):format(demon.zone)
+			)
 			for _, dummy in ipairs(dummies) do
 				expectTruthy(
 					WorldSpawnConfigModule.distanceBetween(demon, dummy) >= 70,
-					("level %d demon separated from dummy yard"):format(demon.level)
+					("zone %s demon separated from dummy yard"):format(demon.zone)
 				)
 			end
 		end
 	end
 
-	for level, group in pairs(grouped) do
+	for zone, group in pairs(grouped) do
 		for _, left in ipairs(group) do
 			for _, right in ipairs(group) do
 				expectTruthy(
 					WorldSpawnConfigModule.distanceBetween(left, right) <= 30,
-					("level %d cluster remains compact"):format(level)
+					("zone %s cluster remains compact"):format(zone)
 				)
 			end
 		end
@@ -768,10 +950,40 @@ test("safe-zone spawn config is centered inside the safe zone", function()
 	expectNear(center.X, 264.982, 0.001, "safe-zone center X")
 	expectNear(center.Y, 46.078, 0.001, "safe-zone center Y")
 	expectNear(center.Z, -140.58, 0.001, "safe-zone center Z")
-	expectTruthy(size.X >= 90 and size.Z >= 90, "safe-zone covers wider starter house area")
+	expectTruthy(size.X >= 120 and size.Z >= 120, "safe-zone covers wider starter house area")
+	expectEqual(
+		WorldSpawnConfigModule.SAFE_ZONE.bubbleCenterGroundOffset,
+		0,
+		"safe-zone sphere center sits at ground height to render as a dome"
+	)
 end)
 
-test("starter NPCs stay inside the safe zone and dummies stay outside it", function()
+test("captured forest and frost expansion regions are configured", function()
+	local expectedRegions = {
+		ForestHollowWest = { x = -82.509, z = 121.252, count = 3 },
+		ForestHollowEast = { x = 84.97, z = 257.62, count = 3 },
+		ForestHollowNorth = { x = -142.973, z = 188.376, count = 3 },
+		DeepSnowfield = { x = -343.46, z = 575.479, count = 4 },
+	}
+
+	local configuredRegions = {}
+	for _, group in ipairs(WorldSpawnConfigModule.DEMON_GROUPS) do
+		configuredRegions[group.zone] = group
+	end
+	for _, group in ipairs(WorldSpawnConfigModule.FROST_DEMON_GROUPS) do
+		configuredRegions[group.zone] = group
+	end
+
+	for zone, expected in pairs(expectedRegions) do
+		local configured = configuredRegions[zone]
+		expectTruthy(configured, zone .. " exists")
+		expectNear(configured.centerX, expected.x, 0.001, zone .. " captured X")
+		expectNear(configured.centerZ, expected.z, 0.001, zone .. " captured Z")
+		expectEqual(configured.count, expected.count, zone .. " enemy count")
+	end
+end)
+
+test("starter NPCs stay safe while training dummies remain outside the safe zone", function()
 	local center = WorldSpawnConfigModule.getSafeZoneCenter()
 	local size = WorldSpawnConfigModule.getSafeZoneSize()
 	local halfX = size.X * 0.5
@@ -796,6 +1008,7 @@ test("starter placement coordinates match captured house setup", function()
 	local officer = WorldSpawnConfigModule.getNPCSpawn("QuestNPC_Officer")
 	local aoi = WorldSpawnConfigModule.getNPCSpawn("QuestNPC_Scout")
 	local dummies = WorldSpawnConfigModule.getTrainingDummySpawns()
+	local areas = WorldSpawnConfigModule.TRAINING_DUMMY_AREAS
 
 	expectNear(urokodaki.position.X, 291.339, 0.001, "Urokodaki X")
 	expectNear(urokodaki.position.Z, -120.274, 0.001, "Urokodaki Z")
@@ -803,8 +1016,55 @@ test("starter placement coordinates match captured house setup", function()
 	expectNear(officer.position.Z, -122.065, 0.001, "Corps Officer Z")
 	expectNear(aoi.position.X, 280.745, 0.001, "Merchant Aoi X")
 	expectNear(aoi.position.Z, -111.636, 0.001, "Merchant Aoi Z")
-	expectNear(dummies[1].x, 275.555, 0.001, "dummy yard origin X")
-	expectNear(dummies[1].z, -27.898, 0.001, "dummy yard origin Z")
+	expectEqual(#areas, 2, "two training areas")
+	expectNear(areas[1].centerX, 291.286, 0.001, "north training grid center X")
+	expectNear(areas[1].centerZ, -25.608, 0.001, "north training grid center Z")
+	expectNear(areas[2].centerX, 368.224, 0.001, "east training grid center X")
+	expectNear(areas[2].centerZ, -139.176, 0.001, "east training grid center Z")
+	for _, area in ipairs(areas) do
+		expectEqual(area.columns * area.rows, 6, area.name .. " dummy count")
+	end
+	expectEqual(WorldSpawnConfigModule.DUMMY_GRID.useMarkerOverride, false, "captured coordinates override old marker")
+	expectTruthy(
+		WorldSpawnConfigModule.getDemonExclusionZone(278.982, -126.58) ~= nil,
+		"captured training-yard center rejects demon spawns"
+	)
+	local areaCounts = {}
+	for _, dummy in ipairs(dummies) do
+		areaCounts[dummy.area] = (areaCounts[dummy.area] or 0) + 1
+		expectTruthy(
+			WorldSpawnConfigModule.getDemonExclusionZone(dummy.x, dummy.z) ~= nil,
+			"each explicit training dummy rejects nearby demon spawns"
+		)
+	end
+	expectEqual(areaCounts.NorthTrainingGround, 6, "north training grid spawn count")
+	expectEqual(areaCounts.EastTrainingGround, 6, "east training grid spawn count")
+end)
+
+test("all combat styles have owned cast and impact VFX profiles", function()
+	local expectedStyles = {
+		"Basic",
+		"WaterBreathing",
+		"FlameBreathing",
+		"DemonArts",
+		"TemariDemonArts",
+	}
+	for _, styleName in ipairs(expectedStyles) do
+		local profile = CombatVFXConfigModule.getStyleProfile(styleName)
+		expectTruthy(profile.Primary, styleName .. " primary color")
+		expectTruthy(profile.Secondary, styleName .. " secondary color")
+		expectTruthy(#profile.CastTemplates >= 2, styleName .. " layered cast VFX")
+		expectTruthy(#profile.ImpactTemplates >= 2, styleName .. " layered impact VFX")
+	end
+
+	for _, skill in pairs(SkillSystemModule.getRegisteredSkills()) do
+		local profile = CombatVFXConfigModule.getStyleProfile(skill.Style)
+		expectTruthy(profile.CastTemplates[1], skill.Id .. " resolves cast VFX")
+		expectTruthy(profile.ImpactTemplates[1], skill.Id .. " resolves impact VFX")
+	end
+
+	expectEqual(CombatVFXConfigModule.getComboProfile(4).Finisher, true, "fourth basic hit is a VFX finisher")
+	expectTruthy(CombatVFXConfigModule.RENDER_DISTANCE > 128, "VFX range covers maximum camera zoom")
 end)
 
 test("Demon Boss has a dedicated travel destination", function()
@@ -812,6 +1072,8 @@ test("Demon Boss has a dedicated travel destination", function()
 	local boss = demons[#demons]
 	expectEqual(boss.boss, true, "last spawn is boss")
 	expectEqual(boss.zone, "DemonBossArena", "boss zone")
+	expectNear(boss.x, -393.923, 0.001, "forest boss captured X")
+	expectNear(boss.z, -337.774, 0.001, "forest boss captured Z")
 	for index = 1, #demons - 1 do
 		expectTruthy(
 			WorldSpawnConfigModule.distanceBetween(boss, demons[index]) >= 120,
@@ -823,11 +1085,13 @@ end)
 test("Frost demons have distinct spawns and a separated boss arena", function()
 	local forestDemons = WorldSpawnConfigModule.getDemonSpawns()
 	local frostDemons = WorldSpawnConfigModule.getFrostDemonSpawns()
-	expectEqual(#frostDemons, 18, "regular frost demons plus boss count")
+	expectEqual(#frostDemons, 22, "regular frost demons plus boss count")
 
 	local frostBoss = frostDemons[#frostDemons]
 	expectEqual(frostBoss.boss, true, "last frost spawn is boss")
 	expectEqual(frostBoss.zone, "FrostDemonBossArena", "frost boss zone")
+	expectNear(frostBoss.x, -848.917, 0.001, "frost boss captured X")
+	expectNear(frostBoss.z, 51.089, 0.001, "frost boss captured Z")
 
 	for frostIndex, frost in ipairs(frostDemons) do
 		for forestIndex, forest in ipairs(forestDemons) do

@@ -56,6 +56,8 @@ feature branch -> pull request -> dev -> validate -> Studio staging publish
 main -> validate -> Studio production publish
 ```
 
+Merges deploy only the Rojo-managed code and assets; they do not deploy the Studio-owned snowy map. After a `dev` merge, open the staging place and manually publish its current map with the latest code. After a `main` merge, repeat that process in the production place. The current GitHub workflow performs validation only, so the Studio publish step completes each environment deployment.
+
 ### Required Checks Before PR
 
 ```powershell
@@ -66,3 +68,4 @@ Remove-Item build_check.rbxl
 
 See [docs/PULL_REQUESTS.md](docs/PULL_REQUESTS.md) for branch naming, PR expectations, and merge rules.
 See [docs/BUG_TRACKING.md](docs/BUG_TRACKING.md) for bug reporting format and Studio Output log requirements.
+See [docs/CLAN_SYSTEM.md](docs/CLAN_SYSTEM.md) for clan progression, social bonuses, persistence, and enemy-level scaling.

@@ -4,11 +4,11 @@ local TotalFocusModule = {}
 -- Absolute XP thresholds to reach each tier.
 -- The gap between tiers grows — floor of next tier ≠ roof of previous.
 TotalFocusModule.TIERS = {
-	{ name = "V1", xp = 0,     damageBonus = 0.10, damageReduction = 0.00, speedBonus = 15, staminaDrainPerHalfSec = 3,  haloColor = Color3.fromRGB(0,   220,  80) },
-	{ name = "V2", xp = 1000,  damageBonus = 0.20, damageReduction = 0.00, speedBonus = 15, staminaDrainPerHalfSec = 0,  haloColor = Color3.fromRGB(80,  140, 255) },
-	{ name = "V3", xp = 10000, damageBonus = 0.20, damageReduction = 0.05, speedBonus = 15, staminaDrainPerHalfSec = 0,  haloColor = Color3.fromRGB(160,  80, 255) },
-	{ name = "V4", xp = 25000, damageBonus = 0.20, damageReduction = 0.10, speedBonus = 15, staminaDrainPerHalfSec = 0,  haloColor = Color3.fromRGB(255, 200,   0) },
-	{ name = "V5", xp = 50000, damageBonus = 0.20, damageReduction = 0.15, speedBonus = 15, staminaDrainPerHalfSec = 0,  haloColor = Color3.fromRGB(220,  30,  30) },
+	{ name = "V1", xp = 0,     damageBonus = 0.10, damageReduction = 0.00, speedBonus = 15, staminaDrainPerSecond = 6,  haloColor = Color3.fromRGB(0,   220,  80) },
+	{ name = "V2", xp = 1000,  damageBonus = 0.20, damageReduction = 0.00, speedBonus = 15, staminaDrainPerSecond = 7,  haloColor = Color3.fromRGB(80,  140, 255) },
+	{ name = "V3", xp = 10000, damageBonus = 0.20, damageReduction = 0.05, speedBonus = 15, staminaDrainPerSecond = 8,  haloColor = Color3.fromRGB(160,  80, 255) },
+	{ name = "V4", xp = 25000, damageBonus = 0.20, damageReduction = 0.10, speedBonus = 15, staminaDrainPerSecond = 9,  haloColor = Color3.fromRGB(255, 200,   0) },
+	{ name = "V5", xp = 50000, damageBonus = 0.20, damageReduction = 0.15, speedBonus = 15, staminaDrainPerSecond = 10, haloColor = Color3.fromRGB(220,  30,  30) },
 }
 
 TotalFocusModule.MAX_TIER_INDEX = #TotalFocusModule.TIERS
@@ -36,6 +36,10 @@ end
 
 function TotalFocusModule.getTier(xp: number)
 	return TotalFocusModule.TIERS[TotalFocusModule.getTierIndex(xp)]
+end
+
+function TotalFocusModule.getStaminaDrainPerSecond(xp: number): number
+	return TotalFocusModule.getTier(xp).staminaDrainPerSecond
 end
 
 -- XP required to reach the next tier from current, or nil if already V5.
