@@ -8,6 +8,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local LungeRemote = Remotes:WaitForChild("Lunge")
+local JumpStaminaRemote = Remotes:WaitForChild("JumpStamina")
 local StaminaChanged = Remotes:WaitForChild("StaminaChanged")
 local HPChanged = Remotes:WaitForChild("HPChanged")
 local MovementPhysicsModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("MovementPhysicsModule"))
@@ -497,6 +498,7 @@ local function performAirJump()
 
 	airJumpsUsed += 1
 	lastAirJumpTime = now
+	JumpStaminaRemote:FireServer(true)
 
 	local jumpImpulse = MovementPhysicsModule.getRepeatJumpVelocity(
 		humanoid.UseJumpPower,
@@ -534,6 +536,8 @@ end)
 UserInputService.JumpRequest:Connect(function()
 	if isAirborne then
 		performAirJump()
+	else
+		JumpStaminaRemote:FireServer(false)
 	end
 end)
 

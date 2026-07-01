@@ -970,6 +970,7 @@ function PlayerDataModule.startStaminaRegen(player)
 
 	staminaRegenLoops[player] = true
 	task.spawn(function()
+		local lastSentStamina = -1
 		while playerData[player] do
 			task.wait(0.1)
 			local data = playerData[player]
@@ -981,7 +982,11 @@ function PlayerDataModule.startStaminaRegen(player)
 				local regenMultiplier = getSelflessNumber(player, "getStaminaRegenMultiplier", 1)
 				local regenRate = data.StaminaRegen or StatConfig.getStaminaRegen(data.StaminaStat)
 				data.Stamina = math.min(data.Stamina + regenRate * regenMultiplier * 0.1, effMax)
-				StaminaChanged:FireClient(player, data.Stamina, effMax)
+				local rounded = math.floor(data.Stamina)
+				if rounded ~= lastSentStamina then
+					lastSentStamina = rounded
+					StaminaChanged:FireClient(player, data.Stamina, effMax)
+				end
 			end
 		end
 		staminaRegenLoops[player] = nil

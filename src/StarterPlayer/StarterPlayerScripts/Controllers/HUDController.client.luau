@@ -134,6 +134,13 @@ container:GetPropertyChangedSignal("Visible"):Connect(function()
 	hudLog("BarContainer visibility changed: " .. tostring(container.Visible))
 end)
 
+if UserInputService.TouchEnabled then
+	local hudScale = Instance.new("UIScale")
+	hudScale.Scale = 0.72
+	hudScale.Parent = container
+	container.Position = UDim2.new(0, 8, 1, -BOTTOM_OFFSET)
+end
+
 local containerCorner = Instance.new("UICorner")
 containerCorner.CornerRadius = UDim.new(0, 10)
 containerCorner.Parent = container
@@ -3286,9 +3293,9 @@ ssTimerLabel.Parent = ssPanel
 
 if IS_TOUCH then
 	tfPanel.AnchorPoint = Vector2.new(0, 0)
-	tfPanel.Position = UDim2.new(1, -(PANEL_W + 10), 0, 104)
+	tfPanel.Position = UDim2.new(1, -(PANEL_W + 10), 0, 52)
 	ssPanel.AnchorPoint = Vector2.new(0, 0)
-	ssPanel.Position = UDim2.new(1, -(PANEL_W + 10), 0, 184)
+	ssPanel.Position = UDim2.new(1, -(PANEL_W + 10), 0, 132)
 end
 
 ssBtn.MouseButton1Click:Connect(function()

@@ -5,6 +5,13 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local LungeRemote = Remotes:WaitForChild("Lunge")
 
+local JumpStaminaRemote = Remotes:FindFirstChild("JumpStamina")
+if not JumpStaminaRemote then
+	JumpStaminaRemote = Instance.new("RemoteEvent")
+	JumpStaminaRemote.Name = "JumpStamina"
+	JumpStaminaRemote.Parent = Remotes
+end
+
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
 
@@ -21,6 +28,9 @@ local RespecResultRemote = Remotes:WaitForChild("RespecResult")
 local ResetFactionRemote = Remotes:WaitForChild("ResetFaction")
 
 local LUNGE_STAMINA_COST = 15
+local GROUND_JUMP_STAMINA_COST = 10
+local AIR_JUMP_STAMINA_COST = 15
+local JUMP_STAMINA_RATE_LIMIT = 0.2
 local LUNGE_POWER = 110
 local AERIAL_POWER_MULT = 1.1
 local LUNGE_FORCE_DURATION = 0.18
@@ -352,6 +362,22 @@ ResetFactionRemote.OnServerEvent:Connect(function(player)
 
 	ShowFactionSelectRemote:FireClient(player)
 	print("[MovementServer] " .. player.Name .. " faction reset — showing faction prompt")
+end)
+
+local jumpStaminaTimers = {}
+
+JumpStaminaRemote.OnServerEvent:Connect(function(player, isAirJump)
+	local now = os.clock()
+	local last = jumpStaminaTimers[player] or 0
+	if now - last < JUMP_STAMINA_RATE_LIMIT then return end
+	jumpStaminaTimers[player] = now
+
+	local cost = if isAirJump == true then AIR_JUMP_STAMINA_COST else GROUND_JUMP_STAMINA_COST
+	PlayerDataModule.consumeStamina(player, cost)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	jumpStaminaTimers[player] = nil
 end)
 
 print("[MovementServer] Loaded - Lunge System")

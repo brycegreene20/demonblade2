@@ -133,9 +133,6 @@ local function performLightAttack()
 	task.delay(ATTACK_COOLDOWN, function()
 		isAttacking = false
 	end)
-	task.delay(1.0, function()
-		isAttacking = false
-	end)
 end
 
 -- selene: allow(unused_variable)
@@ -2467,9 +2464,6 @@ useSkill = function(slot)
 	UseSkillRemote:FireServer(skill.Id)
 
 	task.delay(0.5, function()
-		isUsingSkill = false
-	end)
-	task.delay(2.0, function()
 		isUsingSkill = false
 	end)
 end

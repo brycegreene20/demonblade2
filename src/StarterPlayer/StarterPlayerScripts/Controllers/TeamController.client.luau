@@ -20,6 +20,7 @@ local pendingInvite = nil
 local sentInvites = {}
 local inviteToastToken = 0
 local INVITE_TOAST_SECONDS = 7
+local highlightsEnabled = true
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "TeamHUD"
@@ -385,17 +386,23 @@ local function applyTeammateVisual(player)
 	if not character or not head then return end
 
 	local highlight = character:FindFirstChild("TeamHighlight")
-	if not highlight or not highlight:IsA("Highlight") then
-		highlight = Instance.new("Highlight")
-		highlight.Name = "TeamHighlight"
-		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-		highlight.FillTransparency = 0.82
-		highlight.OutlineTransparency = 0.05
-		highlight.Adornee = character
-		highlight.Parent = character
+	if not highlightsEnabled then
+		if highlight then
+			highlight:Destroy()
+		end
+	else
+		if not highlight or not highlight:IsA("Highlight") then
+			highlight = Instance.new("Highlight")
+			highlight.Name = "TeamHighlight"
+			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			highlight.FillTransparency = 0.55
+			highlight.OutlineTransparency = 0.0
+			highlight.Adornee = character
+			highlight.Parent = character
+		end
+		highlight.FillColor = relationshipColor
+		highlight.OutlineColor = relationshipColor
 	end
-	highlight.FillColor = relationshipColor
-	highlight.OutlineColor = relationshipColor
 
 	local marker = character:FindFirstChild("TeamMarker")
 	if not marker or not marker:IsA("BillboardGui") then
@@ -849,6 +856,43 @@ Players.PlayerRemoving:Connect(function(player)
 	if panelOpen then
 		rebuildPlayerList()
 	end
+end)
+
+-- ── Highlight settings toggle ─────────────────────────────────────────────
+local settingsBtn = Instance.new("TextButton")
+settingsBtn.Name = "HighlightToggle"
+settingsBtn.Size = UDim2.fromOffset(96, 26)
+settingsBtn.Position = UDim2.fromOffset(18, 222)
+settingsBtn.BackgroundColor3 = Color3.fromRGB(22, 28, 38)
+settingsBtn.BackgroundTransparency = 0.2
+settingsBtn.BorderSizePixel = 0
+settingsBtn.Font = Enum.Font.GothamBold
+settingsBtn.TextSize = 10
+settingsBtn.TextColor3 = Color3.fromRGB(160, 200, 255)
+settingsBtn.Text = "HIGHLIGHTS: ON"
+settingsBtn.ZIndex = 10
+settingsBtn.Parent = screenGui
+if UserInputService.TouchEnabled then
+	settingsBtn.Size = UDim2.fromOffset(82, 26)
+	settingsBtn.Position = UDim2.fromOffset(12, 140)
+end
+do
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 6)
+	c.Parent = settingsBtn
+	local s = Instance.new("UIStroke")
+	s.Color = Color3.fromRGB(60, 90, 130)
+	s.Transparency = 0.3
+	s.Parent = settingsBtn
+end
+
+settingsBtn.Activated:Connect(function()
+	highlightsEnabled = not highlightsEnabled
+	settingsBtn.Text = highlightsEnabled and "HIGHLIGHTS: ON" or "HIGHLIGHTS: OFF"
+	settingsBtn.TextColor3 = highlightsEnabled
+		and Color3.fromRGB(160, 200, 255)
+		or Color3.fromRGB(130, 130, 150)
+	refreshTeammateVisuals()
 end)
 
 print("[TeamController] Loaded")

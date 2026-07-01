@@ -869,15 +869,134 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
+-- ── Invite toast notifications ───────────────────────────────────────────────
+local shownInviteToasts = {}
+local activeToasts = {}
+local TOAST_LIFETIME = 14
+
+local function dismissToast(toast, clanId)
+	if not toast or not toast.Parent then return end
+	TweenService:Create(toast, TweenInfo.new(0.2), { Position = toast.Position + UDim2.fromOffset(0, -40), BackgroundTransparency = 1 }):Play()
+	task.delay(0.25, function()
+		if toast.Parent then
+			toast:Destroy()
+		end
+	end)
+	activeToasts[clanId] = nil
+end
+
+local toastYOffset = 0
+
+local function showInviteToast(invite)
+	if shownInviteToasts[invite.ClanId] then return end
+	shownInviteToasts[invite.ClanId] = true
+
+	local toastW = UserInputService.TouchEnabled and 280 or 320
+	local toastH = 72
+	local margin = 8
+	toastYOffset += toastH + margin
+
+	local toast = Instance.new("Frame")
+	toast.Name = "InviteToast"
+	toast.Size = UDim2.fromOffset(toastW, toastH)
+	toast.Position = UDim2.new(0.5, -toastW / 2, 0, 56 + toastYOffset - toastH - margin)
+	toast.AnchorPoint = Vector2.new(0, 0)
+	toast.BackgroundColor3 = Color3.fromRGB(14, 20, 30)
+	toast.BackgroundTransparency = 0.1
+	toast.BorderSizePixel = 0
+	toast.ZIndex = 60
+	toast.Parent = gui
+	local toastCorner = Instance.new("UICorner")
+	toastCorner.CornerRadius = UDim.new(0, 8)
+	toastCorner.Parent = toast
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = COLORS.Gold
+	stroke.Transparency = 0.35
+	stroke.Parent = toast
+
+	local msg = Instance.new("TextLabel")
+	msg.Size = UDim2.new(1, -16, 0, 32)
+	msg.Position = UDim2.fromOffset(10, 6)
+	msg.BackgroundTransparency = 1
+	msg.Font = Enum.Font.GothamBold
+	msg.TextSize = 11
+	msg.TextColor3 = COLORS.Gold
+	msg.TextXAlignment = Enum.TextXAlignment.Left
+	msg.TextTruncate = Enum.TextTruncate.AtEnd
+	msg.Text = "🗡  " .. (invite.InviterName or "Someone") .. " invited you to  " .. (invite.ClanName or "a clan")
+	msg.ZIndex = 61
+	msg.Parent = toast
+
+	local function makeBtn(label, xOffset, bgColor, action)
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.fromOffset(90, 26)
+		btn.Position = UDim2.fromOffset(xOffset, 40)
+		btn.BackgroundColor3 = bgColor
+		btn.BackgroundTransparency = 0.2
+		btn.BorderSizePixel = 0
+		btn.Font = Enum.Font.GothamBold
+		btn.TextSize = 11
+		btn.TextColor3 = Color3.fromRGB(240, 245, 255)
+		btn.Text = label
+		btn.ZIndex = 62
+		btn.Parent = toast
+		local btnCorner = Instance.new("UICorner")
+		btnCorner.CornerRadius = UDim.new(0, 5)
+		btnCorner.Parent = btn
+		btn.Activated:Connect(function()
+			sendAction({ Type = "InviteResponse", ClanId = invite.ClanId, Accepted = action })
+			dismissToast(toast, invite.ClanId)
+			toastYOffset = math.max(0, toastYOffset - toastH - margin)
+			if action then
+				attentionBadge.Visible = false
+				task.delay(0.4, function()
+					if refreshData() then
+						renderCurrentTab()
+					end
+				end)
+			end
+		end)
+	end
+
+	makeBtn("ACCEPT", 10, Color3.fromRGB(30, 120, 70), true)
+	makeBtn("DECLINE", 108, Color3.fromRGB(120, 35, 40), false)
+
+	activeToasts[invite.ClanId] = toast
+
+	task.delay(TOAST_LIFETIME, function()
+		if activeToasts[invite.ClanId] == toast then
+			dismissToast(toast, invite.ClanId)
+			toastYOffset = math.max(0, toastYOffset - toastH - margin)
+		end
+	end)
+end
+
+local function checkAndShowInviteToasts()
+	local invites = currentData and currentData.PendingInvites
+	if not invites then return end
+	for _, invite in ipairs(invites) do
+		showInviteToast(invite)
+	end
+end
+
 ClanUpdate.OnClientEvent:Connect(function(payload)
 	if type(payload) ~= "table" then return end
-	if payload.Message then status.Text = tostring(payload.Message) end
+	if payload.Message then
+		status.Text = tostring(payload.Message)
+	end
 	if panelOpen and payload.Refresh then
 		task.delay(0.15, function()
-			if panelOpen and refreshData() then renderCurrentTab() end
+			if panelOpen and refreshData() then
+				renderCurrentTab()
+			end
 		end)
 	elseif payload.Refresh then
 		attentionBadge.Visible = true
+		task.delay(0.3, function()
+			if not panelOpen and refreshData() then
+				checkAndShowInviteToasts()
+			end
+		end)
 	end
 end)
 
