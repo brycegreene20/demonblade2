@@ -369,9 +369,13 @@ local function clearTeammateVisual(player)
 	local character = player.Character
 	if character then
 		local highlight = character:FindFirstChild("TeamHighlight")
-		if highlight then highlight:Destroy() end
+		if highlight then
+			highlight:Destroy()
+		end
 		local marker = character:FindFirstChild("TeamMarker")
-		if marker then marker:Destroy() end
+		if marker then
+			marker:Destroy()
+		end
 	end
 end
 
@@ -540,8 +544,12 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 
 		local rawDirection = Vector2.new(screenPoint.X, screenPoint.Y) - center
-		if screenPoint.Z < 0 then rawDirection = -rawDirection end
-		if rawDirection.Magnitude < 0.01 then rawDirection = Vector2.new(0, -1) end
+		if screenPoint.Z < 0 then
+			rawDirection = -rawDirection
+		end
+		if rawDirection.Magnitude < 0.01 then
+			rawDirection = Vector2.new(0, -1)
+		end
 		local direction = rawDirection.Unit
 		local maxX = math.max(1, center.X - margin.X)
 		local maxY = math.max(1, center.Y - margin.Y)
@@ -563,7 +571,9 @@ RunService.RenderStepped:Connect(function(dt)
 			arrow.TextColor3 = color
 			arrow.Rotation = math.deg(math.atan2(direction.Y, direction.X))
 		end
-		if stroke and stroke:IsA("UIStroke") then stroke.Color = color end
+		if stroke and stroke:IsA("UIStroke") then
+			stroke.Color = color
+		end
 	end
 end)
 
@@ -851,7 +861,9 @@ end)
 Players.PlayerRemoving:Connect(function(player)
 	clearTeammateVisual(player)
 	local marker = edgeMarkers[player]
-	if marker then marker:Destroy() end
+	if marker then
+		marker:Destroy()
+	end
 	edgeMarkers[player] = nil
 	if panelOpen then
 		rebuildPlayerList()

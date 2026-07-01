@@ -455,7 +455,9 @@ local function invitePlayer(player, payload)
 	}
 	local invites = pendingInvites[target] or {}
 	for index = #invites, 1, -1 do
-		if invites[index].ClanId == clanId then table.remove(invites, index) end
+		if invites[index].ClanId == clanId then
+				table.remove(invites, index)
+			end
 	end
 	table.insert(invites, invite)
 	pendingInvites[target] = invites
@@ -464,9 +466,13 @@ local function invitePlayer(player, payload)
 		local currentInvites = pendingInvites[target]
 		if not currentInvites then return end
 		for index = #currentInvites, 1, -1 do
-			if currentInvites[index] == invite then table.remove(currentInvites, index) end
+			if currentInvites[index] == invite then
+				table.remove(currentInvites, index)
+			end
 		end
-		if #currentInvites == 0 then pendingInvites[target] = nil end
+		if #currentInvites == 0 then
+			pendingInvites[target] = nil
+		end
 		if target.Parent then
 			ClanUpdate:FireClient(target, { Message = "Clan invite expired.", Refresh = true })
 		end
@@ -487,7 +493,9 @@ local function addMemberToClan(clanId, userId, name, displayName)
 			Bounty = 0,
 			JoinedAt = os.time(),
 		}
-		if clan.PendingRequests then clan.PendingRequests[key] = nil end
+		if clan.PendingRequests then
+			clan.PendingRequests[key] = nil
+		end
 		return true
 	end)
 end
@@ -503,7 +511,9 @@ local function respondToInvite(player, payload)
 			break
 		end
 	end
-	if selectedIndex then table.remove(invites, selectedIndex) end
+	if selectedIndex then
+		table.remove(invites, selectedIndex)
+	end
 	pendingInvites[player] = #invites > 0 and invites or nil
 	if not selected then return false, "Invite expired." end
 	if payload.Accepted ~= true then return true, "Invite declined." end
@@ -673,7 +683,9 @@ local function flushActivity(clanId)
 		end
 		for userId, bounty in activity.Bounties or {} do
 			local member = current.Members and current.Members[userId]
-			if member then member.Bounty = math.max(0, bounty) end
+			if member then
+				member.Bounty = math.max(0, bounty)
+			end
 		end
 		for _, achievement in ipairs(ClanModule.ACHIEVEMENTS) do
 			if current.Achievements[achievement.Id] ~= true
@@ -753,7 +765,9 @@ function ClanService.grantActivity(player, eventName, prestige, reputation)
 	local playerData = PlayerDataModule.getData(player)
 	activity.Bounties[key] = math.max(0, playerData and playerData.Bounty or 0)
 	local stat = statByEvent[eventName]
-	if stat then activity.Stats[stat] = (activity.Stats[stat] or 0) + 1 end
+	if stat then
+		activity.Stats[stat] = (activity.Stats[stat] or 0) + 1
+	end
 	dirtyClans[clanId] = true
 	local newReputation = PlayerDataModule.addClanReputation(player, reputationGain)
 	player:SetAttribute("ClanReputation", newReputation)
@@ -761,7 +775,9 @@ function ClanService.grantActivity(player, eventName, prestige, reputation)
 	if cachedClan then
 		cachedClan.Prestige = (cachedClan.Prestige or 0) + math.max(0, math.floor(tonumber(prestige) or 0))
 		cachedClan.Stats = cachedClan.Stats or {}
-		if stat then cachedClan.Stats[stat] = (cachedClan.Stats[stat] or 0) + 1 end
+		if stat then
+			cachedClan.Stats[stat] = (cachedClan.Stats[stat] or 0) + 1
+		end
 		local member = cachedClan.Members and cachedClan.Members[key]
 		if member then
 			member.Reputation = newReputation

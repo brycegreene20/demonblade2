@@ -236,7 +236,9 @@ for _, tabName in ipairs({ "Overview", "Members", "Recruitment", "Leaderboard", 
 	styleButton(button)
 	button.Activated:Connect(function()
 		activeTab = tabName
-		if renderCurrentTab then renderCurrentTab() end
+		if renderCurrentTab then
+				renderCurrentTab()
+			end
 	end)
 	tabButtons[tabName] = button
 end
@@ -677,7 +679,9 @@ local function renderRecruit()
 	local clan = currentData and currentData.Clan
 	if clan and clan.CanManage then
 		addHeading("JOIN REQUESTS")
-		if #(clan.Requests or {}) == 0 then addBody("No pending requests.") end
+		if #(clan.Requests or {}) == 0 then
+			addBody("No pending requests.")
+		end
 		for _, request in ipairs(clan.Requests or {}) do
 			local row = addRow(54)
 			local label = Instance.new("TextLabel")
@@ -834,7 +838,9 @@ local function setOpen(open)
 	panelOpen = open
 	overlay.Visible = open
 	if not open then
-		if UserInputService.GamepadEnabled then GuiService.SelectedObject = clanButton end
+		if UserInputService.GamepadEnabled then
+			GuiService.SelectedObject = clanButton
+		end
 		return
 	end
 	attentionBadge.Visible = false
