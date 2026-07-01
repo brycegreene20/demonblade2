@@ -6,11 +6,7 @@ local RunService = game:GetService("RunService")
 local DataStoreModule = {}
 
 local STORE_NAME = "PlayerSaveData_v1"
-local AUTO_SAVE_INTERVAL = 60
-local MAX_RETRIES = 3
-local BASE_RETRY_DELAY = 1
-local MIN_WRITE_INTERVAL = 6
-local AUTO_SAVE_ENABLED = not RunService:IsStudio()
+local AUTO_SAVE_ENABLED = true
 
 local dataStore = DataStoreService:GetDataStore(STORE_NAME)
 local sessionCache = {}
@@ -18,11 +14,53 @@ local dataLoaded = {}
 local lastWriteTime = {}
 local writeQueue = {}
 local processingQueue = false
+local writeLocks = {}
+local writeRevisions = {}
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local Modules = ReplicatedStorage:WaitForChild("Modules")
+local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
+local DataPersistencePolicyModule = require(Modules:WaitForChild("DataPersistencePolicyModule"))
+local AUTO_SAVE_INTERVAL = DataPersistencePolicyModule.AUTO_SAVE_INTERVAL
+local MAX_RETRIES = DataPersistencePolicyModule.MAX_RETRIES
+local BASE_RETRY_DELAY = DataPersistencePolicyModule.BASE_RETRY_DELAY
+local MIN_WRITE_INTERVAL = DataPersistencePolicyModule.MIN_WRITE_INTERVAL
+
+local function getLatestSnapshot(player)
+	local payload = PlayerDataModule.getSavePayload(player)
+	if payload then
+		sessionCache[player] = DataPersistencePolicyModule.copySnapshot(payload)
+	end
+	return sessionCache[player] and DataPersistencePolicyModule.copySnapshot(sessionCache[player]) or nil
+end
 
 local function getKey(player)
 	return "Player_" .. player.UserId
+end
+
+local function nextWriteRevision(key)
+	local revision = (writeRevisions[key] or 0) + 1
+	writeRevisions[key] = revision
+	return revision
+end
+
+local function acquireWriteLock(key)
+	while writeLocks[key] do
+		task.wait(0.05)
+	end
+	writeLocks[key] = true
+end
+
+local function releaseWriteLock(key)
+	writeLocks[key] = nil
+end
+
+local function removeQueuedWrites(key)
+	for index = #writeQueue, 1, -1 do
+		if writeQueue[index].key == key then
+			table.remove(writeQueue, index)
+		end
+	end
 end
 
 local function retryWithBackoff(func, playerName)
@@ -46,10 +84,15 @@ local function processWriteQueue()
 
 	while #writeQueue > 0 do
 		local entry = table.remove(writeQueue, 1)
-		local _player = entry.player
 		local key = entry.key
 		local data = entry.data
 		local playerName = entry.playerName
+
+		acquireWriteLock(key)
+		if entry.revision ~= writeRevisions[key] then
+			releaseWriteLock(key)
+			continue
+		end
 
 		local now = os.clock()
 		local lastWrite = lastWriteTime[key] or 0
@@ -58,14 +101,26 @@ local function processWriteQueue()
 			task.wait(MIN_WRITE_INTERVAL - elapsed)
 		end
 
-		local success = retryWithBackoff(function()
-			dataStore:SetAsync(key, data)
-		end, playerName)
+		local attemptedWrite = false
+		local success = false
+		if entry.revision == writeRevisions[key] then
+			attemptedWrite = true
+			success = retryWithBackoff(function()
+				dataStore:UpdateAsync(key, function()
+					return data
+				end)
+			end, playerName)
+		end
 
-		lastWriteTime[key] = os.clock()
+		if attemptedWrite then
+			lastWriteTime[key] = os.clock()
+		end
+		releaseWriteLock(key)
 
 		if success then
 			print("[DataStoreModule] Saved data for " .. playerName)
+		elseif entry.revision ~= writeRevisions[key] then
+			print("[DataStoreModule] Skipped stale queued save for " .. playerName)
 		else
 			warn("[DataStoreModule] FAILED to save data for " .. playerName .. " after " .. MAX_RETRIES .. " attempts")
 		end
@@ -93,7 +148,7 @@ function DataStoreModule.loadAsync(player)
 		return {}, true
 	else
 		sessionCache[player] = {}
-		dataLoaded[player] = true
+		dataLoaded[player] = false
 		warn("[DataStoreModule] PERMANENT load failure for " .. player.Name .. ", using defaults")
 
 		local DataLoadError = Remotes:FindFirstChild("DataLoadError")
@@ -106,8 +161,8 @@ function DataStoreModule.loadAsync(player)
 end
 
 function DataStoreModule.queueSave(player)
-	if not dataLoaded[player] then return false end
-	local data = sessionCache[player]
+	if not DataPersistencePolicyModule.canWrite(dataLoaded[player]) then return false end
+	local data = getLatestSnapshot(player)
 	if not data then return false end
 
 	local key = getKey(player)
@@ -115,15 +170,16 @@ function DataStoreModule.queueSave(player)
 	for i, entry in writeQueue do
 		if entry.key == key then
 			writeQueue[i].data = data
+			writeQueue[i].revision = nextWriteRevision(key)
 			return true
 		end
 	end
 
 	table.insert(writeQueue, {
-		player = player,
 		key = key,
 		data = data,
 		playerName = player.Name,
+		revision = nextWriteRevision(key),
 	})
 
 	task.spawn(processWriteQueue)
@@ -131,12 +187,15 @@ function DataStoreModule.queueSave(player)
 end
 
 function DataStoreModule.saveNow(player)
-	if not dataLoaded[player] then return false end
-	local data = sessionCache[player]
+	if not DataPersistencePolicyModule.canWrite(dataLoaded[player]) then return false end
+	local data = getLatestSnapshot(player)
 	if not data then return false end
 
 	local key = getKey(player)
 	local playerName = player.Name
+	nextWriteRevision(key)
+	removeQueuedWrites(key)
+	acquireWriteLock(key)
 
 	local now = os.clock()
 	local lastWrite = lastWriteTime[key] or 0
@@ -146,10 +205,13 @@ function DataStoreModule.saveNow(player)
 	end
 
 	local success = retryWithBackoff(function()
-		dataStore:SetAsync(key, data)
+		dataStore:UpdateAsync(key, function()
+			return data
+		end)
 	end, playerName)
 
 	lastWriteTime[key] = os.clock()
+	releaseWriteLock(key)
 
 	if success then
 		print("[DataStoreModule] Saved data for " .. playerName)
@@ -180,25 +242,20 @@ function DataStoreModule.cleanup(player)
 	dataLoaded[player] = nil
 end
 
-if AUTO_SAVE_ENABLED then
-	task.spawn(function()
-		while true do
-			task.wait(AUTO_SAVE_INTERVAL)
-			local queued = 0
-			for _, player in Players:GetPlayers() do
-				if dataLoaded[player] then
-					DataStoreModule.queueSave(player)
-					queued += 1
-				end
-			end
-			if queued > 0 then
-				print("[DataStoreModule] Auto-save queued for " .. queued .. " player(s)")
+task.spawn(function()
+	while AUTO_SAVE_ENABLED do
+		task.wait(AUTO_SAVE_INTERVAL)
+		local queued = 0
+		for _, player in Players:GetPlayers() do
+			if dataLoaded[player] and DataStoreModule.queueSave(player) then
+				queued += 1
 			end
 		end
-	end)
-else
-	print("[DataStoreModule] Periodic auto-save disabled in Studio; save-on-leave remains enabled")
-end
+		if queued > 0 then
+			print("[DataStoreModule] Auto-save queued fresh snapshots for " .. queued .. " player(s)")
+		end
+	end
+end)
 
 game:BindToClose(function()
 	for _, player in Players:GetPlayers() do
@@ -211,6 +268,16 @@ game:BindToClose(function()
 	task.wait(MIN_WRITE_INTERVAL + 2)
 end)
 
-print("[DataStoreModule] Initialized (store: " .. STORE_NAME .. ", auto-save: " .. AUTO_SAVE_INTERVAL .. "s, queue throttle: " .. MIN_WRITE_INTERVAL .. "s)")
+print(
+	("[DataStoreModule] Initialized (store: %s, auto-save: %ds, queue throttle: %ds, Studio: %s)"):format(
+		STORE_NAME,
+		AUTO_SAVE_INTERVAL,
+		MIN_WRITE_INTERVAL,
+		tostring(RunService:IsStudio())
+	)
+)
+if RunService:IsStudio() then
+	print("[DataStoreModule] Studio saves require Game Settings > Security > Enable Studio Access to API Services")
+end
 
 return DataStoreModule

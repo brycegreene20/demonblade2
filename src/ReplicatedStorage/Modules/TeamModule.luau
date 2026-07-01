@@ -16,4 +16,8 @@ function TeamModule.canDamagePlayer(areTeammates)
 	return areTeammates ~= true
 end
 
+function TeamModule.canRemoveMember(requesterIsLeader, targetIsLeader, sameTeam)
+	return requesterIsLeader == true and targetIsLeader ~= true and sameTeam == true
+end
+
 return TeamModule

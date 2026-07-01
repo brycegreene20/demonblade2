@@ -102,6 +102,11 @@
 
     "Workspace": {
       "$className": "Workspace",
+      "$properties": {
+        "StreamingEnabled": true,
+        "StreamingMinRadius": 256,
+        "StreamingTargetRadius": 1024
+      },
       "$ignoreUnknownInstances": true
     },
 

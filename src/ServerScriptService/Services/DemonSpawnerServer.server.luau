@@ -12,11 +12,7 @@ local Modules = ReplicatedStorage:WaitForChild("Modules")
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
 local CombatModule = require(Modules:WaitForChild("CombatModule"))
 local WorldSpawnConfigModule = require(Modules:WaitForChild("WorldSpawnConfigModule"))
-
-local MASTERY_KILL_REWARDS = {
-	[1] = 3, [2] = 5, [3] = 8, [4] = 12, [5] = 12,
-	[6] = 20, [7] = 20, [8] = 20, [9] = 20, [10] = 20,
-}
+local EnemyProgressionModule = require(Modules:WaitForChild("EnemyProgressionModule"))
 
 local AGGRO_RADIUS = 85
 local ATTACK_RADIUS = 8
@@ -48,38 +44,23 @@ local function debugRewardLog(message)
 	end
 end
 
-local DEMON_STATS = {
-	{ level = 1,  hp = 80,   damage = 5,   xp = 30  },
-	{ level = 2,  hp = 100,  damage = 7,   xp = 40  },
-	{ level = 3,  hp = 130,  damage = 9,   xp = 55  },
-	{ level = 4,  hp = 160,  damage = 11,  xp = 70  },
-	{ level = 5,  hp = 200,  damage = 14,  xp = 90  },
-	{ level = 6,  hp = 250,  damage = 17,  xp = 110 },
-	{ level = 7,  hp = 310,  damage = 20,  xp = 135 },
-	{ level = 8,  hp = 380,  damage = 24,  xp = 165 },
-	{ level = 9,  hp = 460,  damage = 28,  xp = 200 },
-	{ level = 10, hp = 550,  damage = 33,  xp = 240 },
-}
-
-local BOSS_STATS = {
-	level = 12,
-	hp = 1600,
-	damage = 45,
-	xp = 600,
-}
-
 local RAW_SPAWNS = WorldSpawnConfigModule.getDemonSpawns()
 
 local SPAWN_POSITIONS = {}
 for _, raw in RAW_SPAWNS do
-	table.insert(SPAWN_POSITIONS, {
-		pos = CFrame.new(raw.x, FALLBACK_Y + DEMON_HALF_HEIGHT, raw.z),
-		level = raw.level,
-		boss = raw.boss == true,
-		x = raw.x,
-		z = raw.z,
-		zone = raw.zone,
-	})
+	local exclusionZone = WorldSpawnConfigModule.getDemonExclusionZone(raw.x, raw.z)
+	if exclusionZone then
+		warn(("[DemonSpawner] Skipped configured spawn in protected zone '%s'"):format(exclusionZone.name))
+	else
+		table.insert(SPAWN_POSITIONS, {
+			pos = CFrame.new(raw.x, FALLBACK_Y + DEMON_HALF_HEIGHT, raw.z),
+			level = raw.level,
+			boss = raw.boss == true,
+			x = raw.x,
+			z = raw.z,
+			zone = raw.zone,
+		})
+	end
 end
 
 local BAR_WIDTH = 4
@@ -246,9 +227,8 @@ local function _getNavigablePosition(currentPosition, desiredPosition)
 	return currentPosition
 end
 
-local function getStatsForLevel(level)
-	level = math.clamp(level, 1, 10)
-	return DEMON_STATS[level]
+local function getStatsForLevel(level, isBoss)
+	return EnemyProgressionModule.getCombatStats(level, isBoss, 1)
 end
 
 local function getHPColor(ratio)
@@ -265,7 +245,7 @@ local function createHPBar(parent, name, level)
 	billboard.Size = UDim2.fromScale(BAR_WIDTH, BAR_HEIGHT)
 	billboard.StudsOffset = Vector3.new(0, 3, 0)
 	billboard.AlwaysOnTop = true
-	billboard.MaxDistance = 120
+	billboard.MaxDistance = 300
 	billboard.LightInfluence = 0
 	billboard.Parent = parent
 
@@ -332,9 +312,28 @@ local function createHPBar(parent, name, level)
 	nameLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
 	nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
 	nameLabel.TextStrokeTransparency = 0.4
-	nameLabel.Text = name .. " [Lv." .. level .. "]"
+	nameLabel.Text = name
 	nameLabel.ZIndex = 4
 	nameLabel.Parent = bg
+
+	local levelLabel = Instance.new("TextLabel")
+	levelLabel.Name = "LevelLabel"
+	levelLabel.Size = UDim2.fromScale(0.7, 0.7)
+	levelLabel.Position = UDim2.fromScale(0.15, -1.75)
+	levelLabel.BackgroundColor3 = Color3.fromRGB(72, 22, 22)
+	levelLabel.BackgroundTransparency = 0.12
+	levelLabel.BorderSizePixel = 0
+	levelLabel.Font = Enum.Font.GothamBlack
+	levelLabel.TextScaled = true
+	levelLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
+	levelLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+	levelLabel.TextStrokeTransparency = 0.35
+	levelLabel.Text = "LEVEL " .. level
+	levelLabel.ZIndex = 5
+	levelLabel.Parent = bg
+	local levelCorner = Instance.new("UICorner")
+	levelCorner.CornerRadius = UDim.new(0, 5)
+	levelCorner.Parent = levelLabel
 
 	return billboard, fill, damageFill, label
 end
@@ -584,12 +583,13 @@ local function spawnDemon(spawnData)
 	local spawnCFrame = resolveSpawnCFrame(spawnData)
 	local level = spawnData.level
 	local isBoss = spawnData.boss == true
-	local stats = isBoss and BOSS_STATS or getStatsForLevel(level)
+	local stats = getStatsForLevel(level, isBoss)
 	local enemyType = isBoss and "DemonBoss" or "ForestDemon"
 	local displayName = isBoss and "Demon Boss" or "Forest Demon"
 
 	local demon = DemonTemplate:Clone()
 	demon.Name = isBoss and "DemonBoss" or ("ForestDemon_Lv" .. level)
+	demon.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 
 	local torso = demon:FindFirstChild("Torso") or demon:FindFirstChild("UpperTorso")
 	if not torso then
@@ -653,6 +653,7 @@ local function spawnDemon(spawnData)
 
 	demon:SetAttribute("Level", level)
 	demon:SetAttribute("Damage", stats.damage)
+	demon:SetAttribute("DamageReduction", stats.damageReduction)
 	demon:SetAttribute("EnemyType", enemyType)
 	demon:SetAttribute("SpawnZone", spawnData.zone or "Snowfield")
 	demon:SetAttribute("XPReward", stats.xp)
@@ -839,10 +840,22 @@ local function spawnDemon(spawnData)
 		if lastAttackerId then
 			local attacker = Players:GetPlayerByUserId(lastAttackerId)
 			if attacker then
-				CombatModule.grantStateProgressionEvent(attacker, "Kill")
+				-- selene: allow(global_usage)
+				if shared.ClanService and shared.ClanService.grantActivity then
+					-- selene: allow(global_usage)
+					shared.ClanService.grantActivity(
+						attacker,
+						isBoss and "BossKill" or "EnemyKill",
+						level * (isBoss and 10 or 3),
+						level * (isBoss and 5 or 2)
+					)
+				end
 				local rewardPlayers = CombatModule.getRewardPlayers(demon, attacker, 160)
+				local stateMultiplier = EnemyProgressionModule.getKillMultiplier(level, isBoss)
+				local masteryReward = EnemyProgressionModule.getMasteryXP(level, isBoss)
 				for _, rewardedPlayer in rewardPlayers do
 					PlayerDataModule.addXP(rewardedPlayer, stats.xp)
+					CombatModule.grantStateProgressionEvent(rewardedPlayer, "Kill", stateMultiplier)
 					debugRewardLog("Awarded " .. stats.xp .. " XP to " .. rewardedPlayer.Name)
 
 					-- selene: allow(global_usage)
@@ -859,9 +872,8 @@ local function spawnDemon(spawnData)
 
 					local data = PlayerDataModule.getData(rewardedPlayer)
 					if data and data.EquippedStyle and data.EquippedStyle ~= "" then
-						local rewardXP = isBoss and 35 or (MASTERY_KILL_REWARDS[level] or 3)
-						PlayerDataModule.addMasteryXP(rewardedPlayer, data.EquippedStyle, rewardXP)
-						debugRewardLog("Awarded " .. rewardXP .. " mastery XP to " .. rewardedPlayer.Name .. " for style " .. data.EquippedStyle)
+						PlayerDataModule.addMasteryXP(rewardedPlayer, data.EquippedStyle, masteryReward)
+						debugRewardLog("Awarded " .. masteryReward .. " mastery XP to " .. rewardedPlayer.Name .. " for style " .. data.EquippedStyle)
 					end
 				end
 			end
@@ -876,6 +888,7 @@ end
 
 local function replaceAuthoredDemonModels()
 	local candidates = {}
+	local removedFromProtectedZones = 0
 	for _, model in workspace:GetDescendants() do
 		if not model:IsA("Model") or model:IsDescendantOf(demonsFolder) then
 			continue
@@ -898,7 +911,13 @@ local function replaceAuthoredDemonModels()
 		local hasRigParts = model:FindFirstChild("Head") and model:FindFirstChild("Torso")
 		local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model.PrimaryPart
 		if (humanoid or hasRigParts) and root then
-			table.insert(candidates, model)
+			local exclusionZone = WorldSpawnConfigModule.getDemonExclusionZone(root.Position.X, root.Position.Z)
+			if exclusionZone then
+				removedFromProtectedZones += 1
+				model:Destroy()
+			else
+				table.insert(candidates, model)
+			end
 		end
 	end
 
@@ -909,7 +928,7 @@ local function replaceAuthoredDemonModels()
 		local isBoss = model:GetAttribute("IsBoss") == true
 			or string.find(lowerName, "boss", 1, true) ~= nil
 		local parsedLevel = tonumber(string.match(model.Name, "[Ll][Vv]%.?%s*(%d+)"))
-		local level = tonumber(model:GetAttribute("Level")) or parsedLevel or (isBoss and BOSS_STATS.level or 1)
+		local level = tonumber(model:GetAttribute("Level")) or parsedLevel or (isBoss and 12 or 1)
 
 		model:Destroy()
 		spawnDemon({
@@ -924,6 +943,11 @@ local function replaceAuthoredDemonModels()
 
 	if #candidates > 0 then
 		print(("[DemonSpawner] Replaced %d authored demon rig(s) with combat-enabled AI"):format(#candidates))
+	end
+	if removedFromProtectedZones > 0 then
+		print(("[DemonSpawner] Removed %d authored demon rig(s) from protected training areas"):format(
+			removedFromProtectedZones
+		))
 	end
 end
 

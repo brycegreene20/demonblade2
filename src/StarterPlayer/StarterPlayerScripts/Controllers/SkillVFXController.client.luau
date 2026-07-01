@@ -11,6 +11,7 @@ local VFXAssets   = ReplicatedStorage:WaitForChild("VFXAssets")
 local SFXAssets   = ReplicatedStorage:WaitForChild("Assets")
 local Modules     = ReplicatedStorage:WaitForChild("Modules")
 local SkillSystemModule = require(Modules:WaitForChild("SkillSystemModule"))
+local CombatPresentationModule = require(Modules:WaitForChild("CombatPresentationModule"))
 
 -- ── Asset cache ────────────────────────────────────────────────────────────────
 
@@ -1075,6 +1076,7 @@ function SkillVFX.play(character: Model, skillId: string)
 	local skill = SkillSystemModule.getSkill(skillId)
 	if not skill then return end
 
+	CombatPresentationModule.playSkillCastAccent(character, skill.Style, skill.Slot == "V")
 	local handler = SKILL_HANDLERS[skillId]
 	if handler then
 		handler(hrp, skill)

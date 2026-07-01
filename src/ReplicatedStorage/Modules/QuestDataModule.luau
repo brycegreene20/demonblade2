@@ -191,6 +191,13 @@ function QuestDataModule.getQuest(questId)
 	return questLookup[questId]
 end
 
+function QuestDataModule.meetsLevelRequirement(quest, playerLevel)
+	if not quest then return false, 1, math.max(1, math.floor(tonumber(playerLevel) or 1)) end
+	local requiredLevel = math.max(1, math.floor(tonumber(quest.requiredLevel) or 1))
+	local currentLevel = math.max(1, math.floor(tonumber(playerLevel) or 1))
+	return currentLevel >= requiredLevel, requiredLevel, currentLevel
+end
+
 function QuestDataModule.getProgressionRewards(quest)
 	if not quest then
 		return { XP = 0, MasteryXP = 0, TitleXP = 0 }
@@ -209,6 +216,15 @@ function QuestDataModule.getQuestsForNPC(npcId)
 			table.insert(quests, quest)
 		end
 	end
+	table.sort(quests, function(left, right)
+		if left.xpReward ~= right.xpReward then
+			return left.xpReward < right.xpReward
+		end
+		if left.requiredLevel ~= right.requiredLevel then
+			return left.requiredLevel < right.requiredLevel
+		end
+		return left.id < right.id
+	end)
 	return quests
 end
 

@@ -35,16 +35,21 @@ local function fireUpdate(player: Player)
 	local rebirths = data.TotalFocusRebirths or 0
 	local active = activePlayers[player] == true
 	local tier = TotalFocusModule.getTier(xp)
+	local tierIndex = TotalFocusModule.getTierIndex(xp)
+	player:SetAttribute("TotalFocusActive", active)
+	player:SetAttribute("TotalFocusTierIndex", tierIndex)
+	player:SetAttribute("TotalFocusHaloColor", tier.haloColor)
 	TotalFocusChanged:FireClient(player, {
 		xp = xp,
 		tierName = tier.name,
-		tierIndex = TotalFocusModule.getTierIndex(xp),
+		tierIndex = tierIndex,
 		rebirths = rebirths,
 		active = active,
 		label = rebirths > 0 and TotalFocusModule.getConstantLabel(rebirths) or tier.name,
 		haloColor = tier.haloColor,
 		damageBonus = tier.damageBonus,
 		damageReduction = tier.damageReduction,
+		staminaDrainPerSecond = tier.staminaDrainPerSecond,
 	})
 end
 
@@ -100,8 +105,9 @@ local function grantXP(player: Player, amount: number)
 	return true, xp
 end
 
-local function grantEventXP(player: Player, eventName: string)
-	local amount = TotalFocusModule.getXPForEvent(eventName)
+local function grantEventXP(player: Player, eventName: string, rewardMultiplier: number?)
+	local multiplier = math.max(0, tonumber(rewardMultiplier) or 1)
+	local amount = math.floor(TotalFocusModule.getXPForEvent(eventName) * multiplier + 0.5)
 	local granted, xp = grantXP(player, amount)
 	if DEBUG_KILL_XP and granted and xp and eventName == "Kill" then
 		print(("[TotalFocusServer] %s gained %d kill XP (%d total)"):format(player.Name, amount, xp))
@@ -172,7 +178,7 @@ TotalFocusRebirth.OnServerEvent:Connect(function(player: Player)
 	print("[TotalFocusServer]", player.Name, "rebirths into", TotalFocusModule.getConstantLabel(rebirths + 1))
 end)
 
--- Stamina drain loop for V1 speed bonus (V2+ no drain); deactivates on empty stamina
+-- Higher Focus tiers are stronger and progressively more demanding to sustain.
 RunService.Heartbeat:Connect(function(dt: number)
 	for player, _ in activePlayers do
 		if not activePlayers[player] then continue end
@@ -185,14 +191,13 @@ RunService.Heartbeat:Connect(function(dt: number)
 		end
 
 		local xp = data.TotalFocusXP or 0
-		local tierIdx = TotalFocusModule.getTierIndex(xp)
-		local tier = TotalFocusModule.TIERS[tierIdx]
-		if tier.staminaDrainPerHalfSec <= 0 then continue end
+		local drainPerSecond = TotalFocusModule.getStaminaDrainPerSecond(xp)
+		if drainPerSecond <= 0 then continue end
 
 		drainTimers[player] = (drainTimers[player] or 0) + dt
 		if drainTimers[player] >= STAMINA_DRAIN_INTERVAL then
 			drainTimers[player] -= STAMINA_DRAIN_INTERVAL
-			PlayerDataModule.drainStamina(player, tier.staminaDrainPerHalfSec)
+			PlayerDataModule.drainStamina(player, drainPerSecond * STAMINA_DRAIN_INTERVAL)
 		end
 	end
 end)
@@ -204,6 +209,7 @@ Players.PlayerRemoving:Connect(function(player: Player)
 end)
 
 Players.PlayerAdded:Connect(function(player: Player)
+	player:SetAttribute("TotalFocusActive", false)
 	player.CharacterAdded:Connect(function()
 		activePlayers[player] = false
 		exhaustionUntil[player] = nil

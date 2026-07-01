@@ -95,7 +95,9 @@ Players.PlayerAdded:Connect(function(player)
 	end
 
 	-- Load data after handlers are connected so CharacterAdded is never missed
-	savedData = DataStoreModule.loadAsync(player)
+	local loadedSuccessfully
+	savedData, loadedSuccessfully = DataStoreModule.loadAsync(player)
+	player:SetAttribute("DataPersistenceAvailable", loadedSuccessfully == true)
 
 	applyLoadedData(player)
 

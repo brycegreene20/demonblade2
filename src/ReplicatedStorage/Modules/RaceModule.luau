@@ -61,6 +61,7 @@ function RaceModule.applyToStats(stats, raceId)
 	return {
 		maxHP = stats.maxHP * multiplier,
 		maxStamina = stats.maxStamina * multiplier,
+		staminaRegen = (stats.staminaRegen or 0) * multiplier,
 		walkSpeed = stats.walkSpeed * multiplier,
 		damageMultiplier = stats.damageMultiplier * multiplier,
 		defenseMultiplier = math.min(stats.defenseMultiplier * multiplier, 0.85),

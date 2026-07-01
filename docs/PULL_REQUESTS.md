@@ -133,7 +133,7 @@ For server or data changes, be extra careful around:
 
 ## Merging To Dev
 
-When a PR merges to `dev`, GitHub Actions validates the code. Then publish it to:
+When a PR merges to `dev`, GitHub Actions validates the Rojo-managed code. The merge does not deploy the Studio-owned map. The code target and required manual map target are both:
 
 ```text
 Staging Env - Demon Blade 2
@@ -141,11 +141,13 @@ Staging Env - Demon Blade 2
 
 Staging publish flow:
 
-1. Open the existing snowy staging experience in Studio.
-2. Run `rojo serve default.project.json` and connect Rojo.
-3. Confirm the snowy `Workspace` is unchanged.
-4. Smoke test the changed feature and watch Output.
-5. Use **Publish to Roblox** for the staging place.
+1. Check out the updated `dev` branch.
+2. Open the existing snowy staging experience in Studio.
+3. Confirm that staging contains the latest approved map.
+4. Run `rojo serve default.project.json` and connect Rojo.
+5. Confirm the snowy `Workspace` is unchanged.
+6. Smoke test the changed feature and watch Output.
+7. Manually use **Publish to Roblox** for the staging place so its map and newest merged code are saved together.
 
 ## Promoting To Main
 
@@ -154,9 +156,11 @@ After staging is good:
 1. Open a PR from `dev` to `main`.
 2. Confirm CI passes.
 3. Get review/approval.
-4. Merge to `main`.
-5. Open the existing snowy production experience in Studio.
-6. Connect Rojo, verify the map, run the production smoke test, and publish to:
+4. Merge to `main`. This promotes the code, not the Studio-owned map.
+5. Check out the updated `main` branch.
+6. Open the existing snowy production experience in Studio.
+7. Confirm that production contains the latest approved map.
+8. Connect Rojo, verify the map, run the production smoke test, and manually publish to:
 
 ```text
 Demon Blade 2 Publish

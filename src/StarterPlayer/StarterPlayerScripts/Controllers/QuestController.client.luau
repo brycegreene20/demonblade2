@@ -1,3 +1,4 @@
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
@@ -129,6 +130,7 @@ questListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 questListLayout.Parent = questListFrame
 
 local dialogOpen = false
+local dialogTargetWidth = 420
 local __currentNpcId = nil
 
 local function createQuestCard(questInfo, layoutOrder)
@@ -192,7 +194,8 @@ local function createQuestCard(questInfo, layoutOrder)
 	titleLabel.TextStrokeColor3 = SHADOW
 	titleLabel.TextStrokeTransparency = 0.6
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	titleLabel.Text = questInfo.title
+	titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	titleLabel.Text = ("[Lv.%d] %s"):format(questInfo.requiredLevel or 1, questInfo.title)
 	titleLabel.ZIndex = 24
 	titleLabel.Parent = card
 
@@ -259,7 +262,7 @@ local function createQuestCard(questInfo, layoutOrder)
 			TweenService:Create(acceptBtn, TWEEN_FAST, {BackgroundColor3 = QUEST_AVAILABLE}):Play()
 		end)
 
-		acceptBtn.MouseButton1Click:Connect(function()
+		acceptBtn.Activated:Connect(function()
 			acceptBtn.Text = "..."
 			AcceptQuestRemote:FireServer(questInfo.id)
 			acceptSound:Play()
@@ -304,25 +307,32 @@ local function openDialog(npcId, npcName)
 	end
 
 	local totalHeight = 0
+	local firstSelectable
 	for i, questInfo in quests do
-		createQuestCard(questInfo, i)
+		local card = createQuestCard(questInfo, i)
+		firstSelectable = firstSelectable or card:FindFirstChildOfClass("TextButton")
 		totalHeight = totalHeight + 108
 	end
 
 	questListFrame.CanvasSize = UDim2.fromOffset(0, totalHeight)
 
 	local panelHeight = math.min(54 + totalHeight + 12, 400)
+	local camera = workspace.CurrentCamera
+	dialogTargetWidth = math.min(420, math.max(288, (camera and camera.ViewportSize.X or 444) - 24))
 
 	dialogOverlay.Visible = true
 	dialogOverlay.BackgroundTransparency = 1
-	dialogPanel.Size = UDim2.fromOffset(420, 0)
+	dialogPanel.Size = UDim2.fromOffset(dialogTargetWidth, 0)
 	dialogPanel.BackgroundTransparency = 1
 
 	TweenService:Create(dialogOverlay, TWEEN_FAST, {BackgroundTransparency = 0.4}):Play()
 	TweenService:Create(dialogPanel, TWEEN_BOUNCE, {
-		Size = UDim2.fromOffset(420, panelHeight),
+		Size = UDim2.fromOffset(dialogTargetWidth, panelHeight),
 		BackgroundTransparency = 0.05,
 	}):Play()
+	task.defer(function()
+		GuiService.SelectedObject = firstSelectable or closeBtn
+	end)
 end
 
 function closeDialog()
@@ -331,7 +341,7 @@ function closeDialog()
 	_currentNpcId = nil
 
 	TweenService:Create(dialogPanel, TWEEN_FAST, {
-		Size = UDim2.fromOffset(420, 0),
+		Size = UDim2.fromOffset(dialogTargetWidth, 0),
 		BackgroundTransparency = 1,
 	}):Play()
 	TweenService:Create(dialogOverlay, TWEEN_FAST, {BackgroundTransparency = 1}):Play()
@@ -342,7 +352,7 @@ function closeDialog()
 	end)
 end
 
-closeBtn.MouseButton1Click:Connect(closeDialog)
+closeBtn.Activated:Connect(closeDialog)
 
 closeBtn.MouseEnter:Connect(function()
 	TweenService:Create(closeBtn, TWEEN_FAST, {BackgroundColor3 = Color3.fromRGB(100, 40, 40)}):Play()
@@ -487,9 +497,11 @@ compassDistanceLabel.ZIndex = 7
 compassDistanceLabel.Parent = compassFrame
 
 local compassBillboard = Instance.new("BillboardGui")
+local COMPASS_LABEL_HEIGHT_ABOVE_HEAD = 5.1
+local COMPASS_ARROW_HEIGHT_ABOVE_HEAD = 4.15
 compassBillboard.Name = "QuestCompass3D"
 compassBillboard.Size = UDim2.fromOffset(136, 34)
-compassBillboard.StudsOffsetWorldSpace = Vector3.new(0, 3.55, 0)
+compassBillboard.StudsOffsetWorldSpace = Vector3.new(0, COMPASS_LABEL_HEIGHT_ABOVE_HEAD, 0)
 compassBillboard.AlwaysOnTop = true
 compassBillboard.MaxDistance = 250
 compassBillboard.Enabled = false
@@ -576,7 +588,7 @@ local function setCompassSegment(part: Part, startPos: Vector3, endPos: Vector3,
 end
 
 local function updateCompassWorld(head: BasePart, direction: Vector3)
-	local basePos = head.Position + Vector3.new(0, 1.55, 0)
+	local basePos = head.Position + Vector3.new(0, COMPASS_ARROW_HEIGHT_ABOVE_HEAD, 0)
 	local right = Vector3.new(-direction.Z, 0, direction.X)
 	if right.Magnitude < 0.01 then
 		right = Vector3.new(1, 0, 0)
@@ -1000,7 +1012,7 @@ toastRepeatBtn.MouseLeave:Connect(function()
 	TweenService:Create(toastRepeatBtn, TWEEN_FAST, {BackgroundColor3 = TOAST_ACCENT}):Play()
 end)
 
-toastRepeatBtn.MouseButton1Click:Connect(function()
+toastRepeatBtn.Activated:Connect(function()
 	if not toastQuestId then return end
 	local qId = toastQuestId
 	toastRepeatBtn.Text = "..."
@@ -1012,7 +1024,7 @@ toastRepeatBtn.MouseButton1Click:Connect(function()
 	end)
 end)
 
-toastDismissBtn.MouseButton1Click:Connect(dismissToast)
+toastDismissBtn.Activated:Connect(dismissToast)
 
 -- ==================== EVENT CONNECTIONS ====================
 QuestUpdatedRemote.OnClientEvent:Connect(function(data)

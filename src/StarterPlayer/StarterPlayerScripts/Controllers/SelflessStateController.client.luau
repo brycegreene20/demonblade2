@@ -19,13 +19,13 @@ local AURA_NAME = "SelflessAura"
 
 local currentState = { active = false, tier = 1, bonus = 0.10 }
 
-local function getHRP(): BasePart?
-	local char = LocalPlayer.Character
+local function getHRP(player: Player): BasePart?
+	local char = player.Character
 	return char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
 
-local function removeAura()
-	local char = LocalPlayer.Character
+local function removeAura(player: Player)
+	local char = player.Character
 	if not char then return end
 	local existing = char:FindFirstChild(AURA_NAME)
 	if existing then
@@ -33,11 +33,11 @@ local function removeAura()
 	end
 end
 
-local function spawnAura(tier: number)
-	removeAura()
-	local hrp = getHRP()
+local function spawnAura(player: Player, tier: number)
+	removeAura(player)
+	local hrp = getHRP(player)
 	if not hrp then return end
-	local char = LocalPlayer.Character
+	local char = player.Character
 	if not char then return end
 
 	-- Aura color scales from silver (V1) toward white-gold (V10)
@@ -75,11 +75,17 @@ local function spawnAura(tier: number)
 	}):Play()
 end
 
-local function applyVisuals()
-	if currentState.active then
-		spawnAura(currentState.tier)
+local function applyVisuals(player: Player)
+	local active = player:GetAttribute("SelflessStateActive")
+	local tier = tonumber(player:GetAttribute("SelflessStateTier")) or 1
+	if player == LocalPlayer and active == nil then
+		active = currentState.active
+		tier = currentState.tier
+	end
+	if active == true then
+		spawnAura(player, tier)
 	else
-		removeAura()
+		removeAura(player)
 	end
 end
 
@@ -87,7 +93,7 @@ SelflessStateChanged.OnClientEvent:Connect(function(state: { active: boolean, ti
 	currentState.active = state.active
 	currentState.tier = state.tier
 	currentState.bonus = state.bonus
-	applyVisuals()
+	applyVisuals(LocalPlayer)
 end)
 
 UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
@@ -99,9 +105,24 @@ UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: 
 	SelflessStateToggle:FireServer()
 end)
 
-LocalPlayer.CharacterAdded:Connect(function()
-	task.wait(0.5)
-	applyVisuals()
-end)
+local function observePlayer(player: Player)
+	for _, attributeName in { "SelflessStateActive", "SelflessStateTier" } do
+		player:GetAttributeChangedSignal(attributeName):Connect(function()
+			applyVisuals(player)
+		end)
+	end
+	player.CharacterAdded:Connect(function()
+		task.wait(0.5)
+		applyVisuals(player)
+	end)
+	if player.Character then
+		task.defer(applyVisuals, player)
+	end
+end
+
+for _, player in Players:GetPlayers() do
+	observePlayer(player)
+end
+Players.PlayerAdded:Connect(observePlayer)
 
 print("[SelflessStateController] Loaded — C to toggle Selfless State")
