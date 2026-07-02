@@ -43,7 +43,12 @@
       "Bash(ls tools/)",
       "Bash(where selene *)",
       "Bash(git diff *)",
-      "PowerShell(git add src/ReplicatedStorage/Modules/CompanionModule.luau src/StarterPlayer/StarterPlayerScripts/Controllers/CompanionController.client.luau)"
+      "PowerShell(git add src/ReplicatedStorage/Modules/CompanionModule.luau src/StarterPlayer/StarterPlayerScripts/Controllers/CompanionController.client.luau)",
+      "PowerShell(git add src/ReplicatedStorage/Modules/SkillSystemModule.luau src/ServerScriptService/Services/SkillServer.server.luau src/StarterPlayer/StarterPlayerScripts/Controllers/CombatController.client.luau src/StarterPlayer/StarterPlayerScripts/Controllers/SkillVFXController.client.luau src/StarterPlayer/StarterPlayerScripts/Controllers/FlightController.client.luau)",
+      "PowerShell(git add src/StarterPlayer/StarterPlayerScripts/Controllers/SkillVFXController.client.luau)",
+      "PowerShell(git commit -m \"Fix Selene if_same_then_else warnings in colorizeWater\")",
+      "PowerShell(git add .claude/settings.local.json)",
+      "PowerShell(git commit -m \"Update Claude Code local permissions settings\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\bryce\\OneDrive\\Documents"
