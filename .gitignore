@@ -2,6 +2,7 @@
 *.rbxl
 !DemonBlade2*.rbxl
 *.rbxlx
+*.rbxl.lock
 *.rbxm
 !src/**/*.rbxm
 *.rbxmx
