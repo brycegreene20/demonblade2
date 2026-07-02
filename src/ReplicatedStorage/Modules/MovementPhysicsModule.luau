@@ -3,6 +3,10 @@ local MovementPhysicsModule = {}
 MovementPhysicsModule.REPEAT_JUMP_BOOST_PER_JUMP = 0.12
 MovementPhysicsModule.MAX_REPEAT_JUMP_BOOST = 0.48
 
+function MovementPhysicsModule.getDashStopDistance(hitDistance, wallOffset)
+	return math.max(0, (tonumber(hitDistance) or 0) - math.max(0, tonumber(wallOffset) or 0))
+end
+
 function MovementPhysicsModule.getConfiguredJumpVelocity(useJumpPower, jumpPower, jumpHeight, gravity)
 	if useJumpPower and (tonumber(jumpPower) or 0) > 0 then
 		return jumpPower

@@ -34,6 +34,7 @@ StatConfig.BASE = {
 
 StatConfig.STAMINA_REGEN_PER_POINT = 0.8
 StatConfig.STAMINA_CAPACITY_PER_POINT = 5
+StatConfig.MAX_ALLOCATION_PER_REQUEST = 1000
 
 StatConfig.LEGACY_KEY_MAP = {
 	BreathDamage = "Damage",
@@ -56,6 +57,18 @@ end
 function StatConfig.getMaxStamina(points)
 	return StatConfig.BASE.MaxStamina
 		+ math.max(0, tonumber(points) or 0) * StatConfig.STAMINA_CAPACITY_PER_POINT
+end
+
+function StatConfig.normalizeAllocationAmount(requestedAmount, availablePoints)
+	local available = math.max(0, math.floor(tonumber(availablePoints) or 0))
+	local amount = math.floor(tonumber(requestedAmount) or 1)
+	if amount < 1 or amount > StatConfig.MAX_ALLOCATION_PER_REQUEST then
+		return nil, "Invalid allocation amount"
+	end
+	if amount > available then
+		return nil, "Not enough stat points"
+	end
+	return amount
 end
 
 StatConfig.STAT_POINTS_PER_LEVEL = 5

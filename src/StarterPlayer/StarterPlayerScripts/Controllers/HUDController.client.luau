@@ -550,8 +550,10 @@ local cachedStatPoints = 0
 local cachedStatData: {[string]: any} = {}
 local cachedFaction = ""
 local statPanelOpen = false
+local allocationAmount = 1
+local statRows = {}
 
-local PANEL_HEIGHT = 400
+local PANEL_HEIGHT = 440
 local statPanel = Instance.new("Frame")
 statPanel.Name = "StatPanel"
 statPanel.Size = UDim2.fromOffset(310, PANEL_HEIGHT)
@@ -622,6 +624,114 @@ statPointsLabel.Text = "0 points available"
 statPointsLabel.ZIndex = 16
 statPointsLabel.Parent = statPanel
 
+local allocationSelector = Instance.new("Frame")
+allocationSelector.Name = "AllocationSelector"
+allocationSelector.Size = UDim2.new(1, -20, 0, 34)
+allocationSelector.Position = UDim2.fromOffset(10, 62)
+allocationSelector.BackgroundColor3 = Color3.fromRGB(22, 25, 35)
+allocationSelector.BackgroundTransparency = 0.2
+allocationSelector.BorderSizePixel = 0
+allocationSelector.ZIndex = 16
+allocationSelector.Parent = statPanel
+do
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 6)
+	corner.Parent = allocationSelector
+end
+
+local allocationCaption = Instance.new("TextLabel")
+allocationCaption.Size = UDim2.fromOffset(42, 34)
+allocationCaption.Position = UDim2.fromOffset(6, 0)
+allocationCaption.BackgroundTransparency = 1
+allocationCaption.Font = Enum.Font.GothamBold
+allocationCaption.TextSize = 10
+allocationCaption.TextColor3 = Color3.fromRGB(155, 165, 185)
+allocationCaption.Text = "USE"
+allocationCaption.ZIndex = 17
+allocationCaption.Parent = allocationSelector
+
+local allocationMinus = Instance.new("TextButton")
+allocationMinus.Name = "Decrease"
+allocationMinus.Size = UDim2.fromOffset(32, 26)
+allocationMinus.Position = UDim2.fromOffset(46, 4)
+allocationMinus.BackgroundColor3 = Color3.fromRGB(38, 43, 56)
+allocationMinus.BorderSizePixel = 0
+allocationMinus.Font = Enum.Font.GothamBold
+allocationMinus.TextSize = 18
+allocationMinus.TextColor3 = TEXT_COLOR
+allocationMinus.Text = "-"
+allocationMinus.ZIndex = 17
+allocationMinus.Parent = allocationSelector
+
+local allocationValue = Instance.new("TextBox")
+allocationValue.Name = "Amount"
+allocationValue.Size = UDim2.fromOffset(58, 26)
+allocationValue.Position = UDim2.fromOffset(82, 4)
+allocationValue.BackgroundColor3 = Color3.fromRGB(13, 16, 24)
+allocationValue.BorderSizePixel = 0
+allocationValue.ClearTextOnFocus = false
+allocationValue.Font = Enum.Font.GothamBold
+allocationValue.TextSize = 13
+allocationValue.TextColor3 = GOLD_COLOR
+allocationValue.Text = "1"
+allocationValue.TextXAlignment = Enum.TextXAlignment.Center
+allocationValue.ZIndex = 17
+allocationValue.Parent = allocationSelector
+
+local allocationPlus = Instance.new("TextButton")
+allocationPlus.Name = "Increase"
+allocationPlus.Size = UDim2.fromOffset(32, 26)
+allocationPlus.Position = UDim2.fromOffset(144, 4)
+allocationPlus.BackgroundColor3 = Color3.fromRGB(38, 43, 56)
+allocationPlus.BorderSizePixel = 0
+allocationPlus.Font = Enum.Font.GothamBold
+allocationPlus.TextSize = 18
+allocationPlus.TextColor3 = TEXT_COLOR
+allocationPlus.Text = "+"
+allocationPlus.ZIndex = 17
+allocationPlus.Parent = allocationSelector
+
+local allocationMax = Instance.new("TextButton")
+allocationMax.Name = "Maximum"
+allocationMax.Size = UDim2.fromOffset(100, 26)
+allocationMax.Position = UDim2.fromOffset(180, 4)
+allocationMax.BackgroundColor3 = STAT_BTN_COLOR
+allocationMax.BorderSizePixel = 0
+allocationMax.Font = Enum.Font.GothamBold
+allocationMax.TextSize = 11
+allocationMax.TextColor3 = GOLD_COLOR
+allocationMax.Text = "MAX"
+allocationMax.ZIndex = 17
+allocationMax.Parent = allocationSelector
+
+for _, button in { allocationMinus, allocationValue, allocationPlus, allocationMax } do
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 5)
+	corner.Parent = button
+end
+
+local function setAllocationAmount(value)
+	local maximum = math.max(1, math.min(cachedStatPoints, 1000))
+	allocationAmount = math.clamp(math.floor(tonumber(value) or 1), 1, maximum)
+	allocationValue.Text = tostring(allocationAmount)
+	for _, rowData in statRows do
+		rowData.AddBtn.Text = "+" .. tostring(allocationAmount)
+	end
+end
+
+allocationMinus.Activated:Connect(function()
+	setAllocationAmount(allocationAmount - 1)
+end)
+allocationPlus.Activated:Connect(function()
+	setAllocationAmount(allocationAmount + 1)
+end)
+allocationMax.Activated:Connect(function()
+	setAllocationAmount(math.min(cachedStatPoints, 1000))
+end)
+allocationValue.FocusLost:Connect(function()
+	setAllocationAmount(allocationValue.Text)
+end)
+
 local hintLabel = Instance.new("TextLabel")
 hintLabel.Name = "Hint"
 hintLabel.Size = UDim2.new(1, 0, 0, 20)
@@ -633,8 +743,6 @@ hintLabel.TextColor3 = Color3.fromRGB(120, 120, 140)
 hintLabel.Text = "Press [P] to close"
 hintLabel.ZIndex = 16
 hintLabel.Parent = statPanel
-
-local statRows = {}
 
 local STAT_DEFS = {
 	{key = "Damage", display = "Damage", desc = "+3% damage for every combat style", color = Color3.fromRGB(220, 105, 80)},
@@ -719,13 +827,13 @@ local function createStatRow(def, yPos)
 
 	local addBtn = Instance.new("TextButton")
 	addBtn.Name = "AddBtn"
-	addBtn.Size = UDim2.fromOffset(38, 30)
-	addBtn.Position = UDim2.new(1, -43, 0.5, 0)
+	addBtn.Size = UDim2.fromOffset(50, 30)
+	addBtn.Position = UDim2.new(1, -55, 0.5, 0)
 	addBtn.AnchorPoint = Vector2.new(0, 0.5)
 	addBtn.BackgroundColor3 = STAT_BTN_COLOR
 	addBtn.BorderSizePixel = 0
 	addBtn.Font = Enum.Font.GothamBold
-	addBtn.TextSize = 18
+	addBtn.TextSize = 13
 	addBtn.TextColor3 = GOLD_COLOR
 	addBtn.Text = "+"
 	addBtn.ZIndex = 17
@@ -747,9 +855,9 @@ local function createStatRow(def, yPos)
 		end
 	end)
 
-	addBtn.MouseButton1Click:Connect(function()
+	addBtn.Activated:Connect(function()
 		if cachedStatPoints <= 0 then return end
-		AllocateStatRemote:FireServer(statName)
+		AllocateStatRemote:FireServer(statName, allocationAmount)
 	end)
 
 	return {
@@ -761,7 +869,7 @@ local function createStatRow(def, yPos)
 	}
 end
 
-local yPos = 68
+local yPos = 106
 for _, def in STAT_DEFS do
 	statRows[def.key] = createStatRow(def, yPos)
 	yPos = yPos + 52
@@ -1004,6 +1112,10 @@ end)
 local function updateStatPanel()
 	statPointsLabel.Text = cachedStatPoints .. " point" .. (cachedStatPoints ~= 1 and "s" or "") .. " available"
 	local enabled = cachedStatPoints > 0
+	setAllocationAmount(allocationAmount)
+	allocationMinus.BackgroundColor3 = enabled and Color3.fromRGB(38, 43, 56) or STAT_BTN_DISABLED
+	allocationPlus.BackgroundColor3 = enabled and Color3.fromRGB(38, 43, 56) or STAT_BTN_DISABLED
+	allocationMax.BackgroundColor3 = enabled and STAT_BTN_COLOR or STAT_BTN_DISABLED
 
 	for key, rowData in statRows do
 		local def = rowData.Def
@@ -1016,6 +1128,7 @@ local function updateStatPanel()
 		local canAllocate = enabled and factionMatch
 		rowData.AddBtn.BackgroundColor3 = canAllocate and STAT_BTN_COLOR or STAT_BTN_DISABLED
 		rowData.AddBtn.TextColor3 = canAllocate and GOLD_COLOR or Color3.fromRGB(80, 80, 90)
+		rowData.AddBtn.Text = "+" .. tostring(allocationAmount)
 
 		if key == "Health" then
 			local maxHP = cachedStatData.DerivedMaxHP or (150 + points * 15)
@@ -1037,7 +1150,7 @@ local function updateStatPanel()
 	end
 
 	local visibleCount = 0
-	local yOff = 68
+	local yOff = 106
 	for _, def in STAT_DEFS do
 		local rowData = statRows[def.key]
 		if rowData.Row.Visible then
@@ -1052,8 +1165,11 @@ local function updateStatPanel()
 	changeFactionBtn.Position = UDim2.fromOffset(150, respecY)
 	updateRespecButton()
 
-	PANEL_HEIGHT = 68 + visibleCount * 52 + 42 + 30
-	hintLabel.Position = UDim2.fromOffset(0, 68 + visibleCount * 52 + 42 + 6)
+	PANEL_HEIGHT = 106 + visibleCount * 52 + 42 + 30
+	hintLabel.Position = UDim2.fromOffset(0, 106 + visibleCount * 52 + 42 + 6)
+	if statPanelOpen then
+		statPanel.Size = UDim2.fromOffset(310, PANEL_HEIGHT)
+	end
 
 	if getRespecCooldownRemaining() > 0 then
 		startRespecCooldownTick()

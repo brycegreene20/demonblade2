@@ -1,0 +1,52 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir docs/)",
+      "Bash(git add *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(git commit *)",
+      "WebSearch",
+      "WebFetch(domain:create.roblox.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:devforum.roblox.com)",
+      "Bash(git pull *)",
+      "Bash(lune run *)",
+      "Bash(where lune *)",
+      "Bash(powershell -command \"Get-Command lune -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source\")",
+      "PowerShell(Get-Command lune -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Command selene -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\.cargo\\\\bin\" -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem \"$env:USERPROFILE\\\\.rokit\\\\bin\" -ErrorAction SilentlyContinue | Select-Object Name)",
+      "PowerShell($env:PATH -split \";\" | ForEach-Object { if \\(Test-Path \"$_\\\\lune.exe\"\\) { \"$_\\\\lune.exe\" } })",
+      "Read(//c/Users/bryce/OneDrive/Documents/**)",
+      "Bash(rojo --version)",
+      "Bash(remodel --version)",
+      "Bash(where remodel *)",
+      "Bash(where rojo *)",
+      "Bash(rojo --help)",
+      "Bash(cp \"C:/Users/bryce/OneDrive/Documents/DemonBlade2Update.rbxl\" \"C:/Users/bryce/Documents/DemonBlade2/DemonBlade2.rbxl\" && echo \"copied\")",
+      "Bash(tools/lune/lune.exe run *)",
+      "Bash(xargs -I{} sh -c 'echo \"$\\(du -sh \"{}\" | cut -f1\\) {}\"')",
+      "Bash(gh run *)",
+      "PowerShell(Get-Command selene -ErrorAction SilentlyContinue; Get-ChildItem \"$env:USERPROFILE\\\\.cargo\\\\bin\\\\selene.exe\" -ErrorAction SilentlyContinue)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)",
+      "Bash(New-Item -ItemType File \"c:\\\\Users\\\\bryce\\\\Documents\\\\DemonBlade2\\\\src\\\\Workspace\\\\Map\\\\.gitkeep\")",
+      "Bash(git stash *)",
+      "Bash(gh pr create --title 'fix/features-and-bug-fixes-pt4: Multi-jump, Total Focus, Selfless State, HUD panels' --body ' *)",
+      "Bash(git merge *)",
+      "Bash(git restore *)",
+      "Bash(gh pr *)",
+      "Bash(git commit -m ' *)",
+      "Bash(ls tools/bin/)",
+      "Bash(ls tools/)",
+      "Bash(where selene *)",
+      "Bash(git diff *)",
+      "PowerShell(git add src/ReplicatedStorage/Modules/CompanionModule.luau src/StarterPlayer/StarterPlayerScripts/Controllers/CompanionController.client.luau)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\bryce\\OneDrive\\Documents"
+    ]
+  }
+}

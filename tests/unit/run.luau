@@ -772,6 +772,18 @@ test("stamina upgrades increase both capacity and regeneration", function()
 	)
 end)
 
+test("stat allocation amount is bounded by available points and request limits", function()
+	expectEqual(StatConfig.normalizeAllocationAmount(nil, 5), 1, "legacy single-point allocation")
+	expectEqual(StatConfig.normalizeAllocationAmount(5, 5), 5, "allocate all available points")
+	expectEqual(StatConfig.normalizeAllocationAmount(6, 5), nil, "cannot overspend points")
+	expectEqual(StatConfig.normalizeAllocationAmount(0, 5), nil, "cannot allocate zero points")
+	expectEqual(
+		StatConfig.normalizeAllocationAmount(StatConfig.MAX_ALLOCATION_PER_REQUEST + 1, 5000),
+		nil,
+		"allocation request cap"
+	)
+end)
+
 test("development race spins are explicitly unlimited in public data", function()
 	local publicData = RaceModule.getPublicData("Human", 0)
 	expectEqual(RaceModule.UNLIMITED_SPINS, true, "temporary unlimited-spin configuration")
@@ -891,6 +903,12 @@ test("repeat jumps gain height with each follow-up jump", function()
 	expectTruthy(secondJump > firstJump, "second repeat jump rises higher than first")
 	expectTruthy(fourthJump > secondJump, "fourth repeat jump rises higher than second")
 	expectEqual(cappedJump, 50 * 1.48, "repeat jump boost caps safely")
+end)
+
+test("dash collision stop distance preserves a wall buffer", function()
+	expectNear(MovementPhysicsModule.getDashStopDistance(10, 3), 7, 0.001, "wall buffer")
+	expectNear(MovementPhysicsModule.getDashStopDistance(2, 3), 0, 0.001, "near wall clamps to zero")
+	expectNear(MovementPhysicsModule.getDashStopDistance(-4, 3), 0, 0.001, "invalid distance clamps")
 end)
 
 -- ==================== Quest compass ====================

@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -14,6 +15,7 @@ end
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
+local MovementPhysicsModule = require(Modules:WaitForChild("MovementPhysicsModule"))
 
 local Services = ServerScriptService:WaitForChild("Services")
 local DataStoreModule = require(Services:WaitForChild("DataStoreModule"))
@@ -36,6 +38,12 @@ local AERIAL_POWER_MULT = 1.1
 local LUNGE_FORCE_DURATION = 0.18
 local IFRAME_DURATION = 0.2
 local LUNGE_RATE_LIMIT = 0.85
+local LUNGE_MAX_FORCE = 22000
+local LUNGE_COLLISION_BUFFER = 4
+local LUNGE_WALL_STOP_OFFSET = 3
+local LUNGE_SWEEP_SIDE_OFFSET = 1.25
+local LUNGE_SWEEP_UP_OFFSET = 1.4
+local LUNGE_SWEEP_DOWN_OFFSET = 1.2
 
 local lungeCooldowns = {}
 local iframeActive = {}
@@ -143,12 +151,6 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 local function setIFrames(character, enabled)
-	for _, part in character:GetDescendants() do
-		if part:IsA("BasePart") then
-			part.CanCollide = not enabled
-		end
-	end
-
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		humanoid.PlatformStand = false
@@ -173,6 +175,39 @@ local function setIFrames(character, enabled)
 	elseif not enabled and forceField and forceField.Name == "LungeIFrame" then
 		forceField:Destroy()
 	end
+end
+
+local function getLungeSweepOffsets(direction, hrp)
+	local flat = Vector3.new(direction.X, 0, direction.Z)
+	local right = flat.Magnitude > 0.01 and flat.Unit:Cross(Vector3.yAxis).Unit or hrp.CFrame.RightVector
+	return {
+		Vector3.zero,
+		Vector3.new(0, LUNGE_SWEEP_UP_OFFSET, 0),
+		Vector3.new(0, -LUNGE_SWEEP_DOWN_OFFSET, 0),
+		right * LUNGE_SWEEP_SIDE_OFFSET,
+		-right * LUNGE_SWEEP_SIDE_OFFSET,
+	}
+end
+
+local function getBlockingLungeHit(previousPosition, direction, power, deltaTime, hrp, raycastParams)
+	local frameTravel = math.max((hrp.Position - previousPosition).Magnitude, power * deltaTime)
+	local castVector = direction * math.max(2, frameTravel + LUNGE_COLLISION_BUFFER)
+	for _, offset in getLungeSweepOffsets(direction, hrp) do
+		local result = workspace:Raycast(previousPosition + offset, castVector, raycastParams)
+		if result then
+			return result
+		end
+	end
+	return nil
+end
+
+local function moveRootPreservingFacing(hrp, position)
+	local look = hrp.CFrame.LookVector
+	local flatLook = Vector3.new(look.X, 0, look.Z)
+	if flatLook.Magnitude < 0.01 then
+		flatLook = Vector3.new(0, 0, -1)
+	end
+	hrp.CFrame = CFrame.lookAt(position, position + flatLook.Unit)
 end
 
 local function sanitizeLungeDirection(moveDirection, isAerial, hrp)
@@ -235,16 +270,60 @@ LungeRemote.OnServerEvent:Connect(function(player, moveDirection, isAerial)
 	end
 
 	local linearVelocity = Instance.new("LinearVelocity")
-	linearVelocity.MaxForce = math.huge
+	linearVelocity.MaxForce = LUNGE_MAX_FORCE
 	linearVelocity.VectorVelocity = dir * power
 	linearVelocity.Attachment0 = attachment
 	linearVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
 	linearVelocity.Parent = hrp
 
-	task.delay(LUNGE_FORCE_DURATION, function()
-		if linearVelocity and linearVelocity.Parent then
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.FilterDescendantsInstances = { character }
+	raycastParams.IgnoreWater = true
+	raycastParams.RespectCanCollide = true
+
+	local previousPosition = hrp.Position
+	local cleanedUp = false
+	local sweepConnection
+	local function stopLunge(blockingHit)
+		if cleanedUp then return end
+		cleanedUp = true
+		if sweepConnection then
+			sweepConnection:Disconnect()
+			sweepConnection = nil
+		end
+		if linearVelocity.Parent then
 			linearVelocity:Destroy()
 		end
+		if blockingHit and hrp.Parent then
+			local safeDistance = MovementPhysicsModule.getDashStopDistance(
+				blockingHit.Distance,
+				LUNGE_WALL_STOP_OFFSET
+			)
+			local stopPosition = previousPosition + dir * safeDistance
+			moveRootPreservingFacing(hrp, stopPosition)
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+			print("[MovementServer] Blocked dash into " .. blockingHit.Instance:GetFullName() .. " for " .. player.Name)
+		end
+	end
+
+	sweepConnection = RunService.Heartbeat:Connect(function(deltaTime)
+		if not hrp.Parent then
+			stopLunge(nil)
+			return
+		end
+		local blockingHit = getBlockingLungeHit(previousPosition, dir, power, deltaTime, hrp, raycastParams)
+		if blockingHit then
+			stopLunge(blockingHit)
+			return
+		end
+		hrp.AssemblyAngularVelocity = Vector3.zero
+		previousPosition = hrp.Position
+	end)
+
+	task.delay(LUNGE_FORCE_DURATION, function()
+		stopLunge(nil)
 	end)
 
 	task.delay(IFRAME_DURATION, function()
@@ -268,12 +347,18 @@ LungeRemote.OnServerEvent:Connect(function(player, moveDirection, isAerial)
 	end)
 end)
 
-AllocateStatRemote.OnServerEvent:Connect(function(player, statName)
+AllocateStatRemote.OnServerEvent:Connect(function(player, statName, requestedAmount)
 	if typeof(statName) ~= "string" then return end
-	local success, _err = PlayerDataModule.allocateStat(player, statName)
+	local success, _err, allocatedAmount = PlayerDataModule.allocateStat(player, statName, requestedAmount)
 	if success then
 		syncCacheFromData(player)
-		print("[MovementServer] " .. player.Name .. " allocated point to " .. statName)
+		print(
+			("[MovementServer] %s allocated %d points to %s"):format(
+				player.Name,
+				allocatedAmount,
+				statName
+			)
+		)
 	end
 end)
 

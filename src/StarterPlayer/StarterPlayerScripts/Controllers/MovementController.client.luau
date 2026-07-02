@@ -243,7 +243,11 @@ local function applyDashForce(character, humanoid, hrp, direction, power, durati
 		end
 
 		if blockingHit and hrp and hrp.Parent then
-			local stopPosition = blockingHit.Position + blockingHit.Normal * DASH_WALL_STOP_OFFSET
+			local safeDistance = MovementPhysicsModule.getDashStopDistance(
+				blockingHit.Distance,
+				DASH_WALL_STOP_OFFSET
+			)
+			local stopPosition = previousPosition + direction.Unit * safeDistance
 			moveRootPreservingFacing(hrp, stopPosition)
 			print(("[MovementController] Dash blocked by %s"):format(blockingHit.Instance:GetFullName()))
 		end

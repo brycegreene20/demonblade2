@@ -532,24 +532,26 @@ function PlayerDataModule.addClanReputation(player, amount)
 	return data.ClanReputation
 end
 
-function PlayerDataModule.allocateStat(player, statName)
+function PlayerDataModule.allocateStat(player, statName, requestedAmount)
 	local data = playerData[player]
 	if not data then return false, "No data" end
 	if data.StatPoints <= 0 then return false, "No stat points" end
 	if not StatConfig.VALID_STATS[statName] then return false, "Invalid stat" end
+	local amount, amountError = StatConfig.normalizeAllocationAmount(requestedAmount, data.StatPoints)
+	if not amount then return false, amountError end
 
 	local requiredFaction = StatConfig.FACTION_LOCK[statName]
 	if requiredFaction and PlayerDataModule.getTechniqueFactionFromData(data) ~= requiredFaction then
 		return false, "Wrong technique family for this stat"
 	end
 
-	data[statName] = (data[statName] or 0) + 1
-	data.StatPoints = data.StatPoints - 1
+	data[statName] = (data[statName] or 0) + amount
+	data.StatPoints = data.StatPoints - amount
 
 	PlayerDataModule.applyStatEffects(player)
 	PlayerDataModule.sendStatPointsUpdate(player)
 
-	return true
+	return true, nil, amount
 end
 
 local RESPEC_COOLDOWN = 86400
