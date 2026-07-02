@@ -48,7 +48,8 @@
       "PowerShell(git add src/StarterPlayer/StarterPlayerScripts/Controllers/SkillVFXController.client.luau)",
       "PowerShell(git commit -m \"Fix Selene if_same_then_else warnings in colorizeWater\")",
       "PowerShell(git add .claude/settings.local.json)",
-      "PowerShell(git commit -m \"Update Claude Code local permissions settings\")"
+      "PowerShell(git commit -m \"Update Claude Code local permissions settings\")",
+      "PowerShell(git push origin fix/features-and-bug-fixes-pt5)"
     ],
     "additionalDirectories": [
       "C:\\Users\\bryce\\OneDrive\\Documents"

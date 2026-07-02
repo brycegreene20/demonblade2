@@ -110,11 +110,11 @@ local function colorizeWater(instance: Instance, primary: Color3, secondary: Col
 	local bright = secondary or WATER_C2
 	for _, desc in instance:GetDescendants() do
 		if desc:IsA("ParticleEmitter") or desc:IsA("Trail") or desc:IsA("Beam") then
-			desc.Color = ColorSequence.new(primary, bright)
+			(desc :: ParticleEmitter).Color = ColorSequence.new(primary, bright)
 		elseif desc:IsA("Decal") or desc:IsA("Texture") then
-			desc.Color3 = primary:Lerp(bright, 0.35)
+			(desc :: Decal).Color3 = primary:Lerp(bright, 0.35)
 		elseif desc:IsA("PointLight") or desc:IsA("SpotLight") or desc:IsA("SurfaceLight") then
-			desc.Color = bright
+			(desc :: PointLight).Color = bright
 		end
 	end
 end
