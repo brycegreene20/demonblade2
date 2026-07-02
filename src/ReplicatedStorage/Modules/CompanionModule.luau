@@ -13,15 +13,6 @@ CompanionModule.CATALOG = {
 		Color = Color3.fromRGB(45, 52, 65),
 		SetStat = { Key = "MasteryXP", Value = 0.05 },
 	},
-	PaperShikigami = {
-		Id = "PaperShikigami",
-		Name = "Paper Shikigami",
-		Category = "Shikigami",
-		Description = "A warded paper spirit that protects its chosen partner.",
-		Icon = "rbxassetid://6034287594",
-		Color = Color3.fromRGB(105, 185, 225),
-		SetStat = { Key = "DefensePercent", Value = 0.04 },
-	},
 }
 
 CompanionModule.BUFF_POOL = {

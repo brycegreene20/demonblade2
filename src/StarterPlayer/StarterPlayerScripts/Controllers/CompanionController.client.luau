@@ -229,7 +229,9 @@ end
 
 local function getCompanion(companionId)
 	for _, companion in currentData.Companions or {} do
-		if companion.Id == companionId then return companion end
+		if companion.Id == companionId then
+			return companion
+		end
 	end
 	return nil
 end
@@ -240,7 +242,9 @@ local function setStatus(message, success)
 end
 
 local function invoke(payload)
-	if busy then return end
+	if busy then
+		return
+	end
 	busy = true
 	setStatus("Working...", nil)
 	local ok, response = pcall(function()
@@ -252,10 +256,16 @@ local function invoke(payload)
 		warn("[CompanionController] Companion action failed:", response)
 		return
 	end
-	if response.Data then currentData = response.Data end
-	if response.Success then pendingFusionId = "" end
+	if response.Data then
+		currentData = response.Data
+	end
+	if response.Success then
+		pendingFusionId = ""
+	end
 	setStatus(response.Message or (response.Success and "Done" or "Action failed"), response.Success)
-	if rebuild then rebuild() end
+	if rebuild then
+		rebuild()
+	end
 end
 
 local function addDetailText(text, color, size, bold)
@@ -267,6 +277,7 @@ local function addDetailText(text, color, size, bold)
 	label.TextColor3 = color or COLORS.Text
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.TextYAlignment = Enum.TextYAlignment.Top
+	label.Text = text
 	label.TextWrapped = true
 	label.AutomaticSize = Enum.AutomaticSize.Y
 	label.ZIndex = 53
@@ -384,7 +395,9 @@ rebuild = function()
 		row.ZIndex = 53
 		row.Parent = list
 		addCorner(row, 6)
-		if equipped then addStroke(row, COLORS.Green, 0.1) end
+		if equipped then
+			addStroke(row, COLORS.Green, 0.1)
+		end
 
 		local icon = Instance.new("ImageLabel")
 		icon.Size = UDim2.fromOffset(48, 48)
@@ -438,7 +451,6 @@ rebuild = function()
 	if currentData.CanGrantPrototype then
 		for _, prototype in {
 			{ SpeciesId = "KasugaiCrow", Label = "STUDIO: ADD CROW" },
-			{ SpeciesId = "PaperShikigami", Label = "STUDIO: ADD SHIKIGAMI" },
 		} do
 			local grant = Instance.new("TextButton")
 			grant.Size = UDim2.new(1, 0, 0, 38)
@@ -479,7 +491,9 @@ closeButton.Activated:Connect(function()
 end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
-	if processed then return end
+	if processed then
+		return
+	end
 	if input.KeyCode == Enum.KeyCode.Escape and panelOpen then
 		setPanelOpen(false)
 	end
@@ -488,9 +502,13 @@ end)
 CompanionUpdate.OnClientEvent:Connect(function(data, message)
 	if typeof(data) == "table" then
 		currentData = data
-		if rebuild then rebuild() end
+		if rebuild then
+			rebuild()
+		end
 	end
-	if message then setStatus(message, true) end
+	if message then
+		setStatus(message, true)
+	end
 end)
 
 task.spawn(function()
@@ -507,13 +525,17 @@ end)
 
 local function destroyVisual(player)
 	local visual = companionVisuals[player]
-	if visual then visual:Destroy() end
+	if visual then
+		visual:Destroy()
+	end
 	companionVisuals[player] = nil
 end
 
 local function createVisual(player, speciesId)
 	destroyVisual(player)
-	if speciesId == "" then return nil end
+	if speciesId == "" then
+		return nil
+	end
 
 	local model = Instance.new("Model")
 	model.Name = player.Name .. "_Companion"
@@ -576,14 +598,18 @@ end
 
 Players.PlayerAdded:Connect(watchPlayer)
 Players.PlayerRemoving:Connect(destroyVisual)
-for _, player in Players:GetPlayers() do watchPlayer(player) end
+for _, player in Players:GetPlayers() do
+	watchPlayer(player)
+end
 
 RunService.RenderStepped:Connect(function(deltaTime)
 	local now = os.clock()
 	for player, model in companionVisuals do
 		local character = player.Character
 		local hrp = character and character:FindFirstChild("HumanoidRootPart")
-		if not hrp or not model.PrimaryPart then continue end
+		if not hrp or not model.PrimaryPart then
+			continue
+		end
 		local right = hrp.CFrame.RightVector
 		local targetPosition = hrp.Position + right * 2.2 + Vector3.new(0, 2.3 + math.sin(now * 2.4) * 0.18, 0)
 		local target = CFrame.lookAt(targetPosition, hrp.Position + Vector3.new(0, 1.5, 0))
