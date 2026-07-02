@@ -16,11 +16,7 @@ local Modules = ReplicatedStorage:WaitForChild("Modules")
 local PlayerDataModule = require(Modules:WaitForChild("PlayerDataModule"))
 local CombatModule = require(Modules:WaitForChild("CombatModule"))
 local WorldSpawnConfigModule = require(Modules:WaitForChild("WorldSpawnConfigModule"))
-
-local MASTERY_KILL_REWARDS = {
-	[1] = 3, [2] = 5, [3] = 8, [4] = 12, [5] = 12,
-	[6] = 20, [7] = 20, [8] = 20, [9] = 20, [10] = 20,
-}
+local EnemyProgressionModule = require(Modules:WaitForChild("EnemyProgressionModule"))
 
 local AGGRO_RADIUS = 55
 local ATTACK_RADIUS = 8
@@ -55,38 +51,23 @@ local function debugRewardLog(message)
 	end
 end
 
-local DEMON_STATS = {
-	{ level = 1,  hp = 80,   damage = 5,   xp = 30  },
-	{ level = 2,  hp = 100,  damage = 7,   xp = 40  },
-	{ level = 3,  hp = 130,  damage = 9,   xp = 55  },
-	{ level = 4,  hp = 160,  damage = 11,  xp = 70  },
-	{ level = 5,  hp = 200,  damage = 14,  xp = 90  },
-	{ level = 6,  hp = 250,  damage = 17,  xp = 110 },
-	{ level = 7,  hp = 310,  damage = 20,  xp = 135 },
-	{ level = 8,  hp = 380,  damage = 24,  xp = 165 },
-	{ level = 9,  hp = 460,  damage = 28,  xp = 200 },
-	{ level = 10, hp = 550,  damage = 33,  xp = 240 },
-}
-
-local BOSS_STATS = {
-	level = 14,
-	hp = 1600,
-	damage = 45,
-	xp = 600,
-}
-
 local RAW_SPAWNS = WorldSpawnConfigModule.getFrostDemonSpawns()
 
 local SPAWN_POSITIONS = {}
 for _, raw in RAW_SPAWNS do
-	table.insert(SPAWN_POSITIONS, {
-		pos = CFrame.new(raw.x, FALLBACK_Y, raw.z),
-		level = raw.level,
-		boss = raw.boss == true,
-		x = raw.x,
-		z = raw.z,
-		zone = raw.zone,
-	})
+	local exclusionZone = WorldSpawnConfigModule.getDemonExclusionZone(raw.x, raw.z)
+	if exclusionZone then
+		warn(("[SnowDemonSpawner] Skipped configured spawn in protected zone '%s'"):format(exclusionZone.name))
+	else
+		table.insert(SPAWN_POSITIONS, {
+			pos = CFrame.new(raw.x, FALLBACK_Y, raw.z),
+			level = raw.level,
+			boss = raw.boss == true,
+			x = raw.x,
+			z = raw.z,
+			zone = raw.zone,
+		})
+	end
 end
 
 local BAR_WIDTH = 4
@@ -198,9 +179,8 @@ local function resolveSpawnCFrame(spawnData, isBoss)
 	return CFrame.new(spawnData.x, FALLBACK_Y + groundOffset, spawnData.z)
 end
 
-local function getStatsForLevel(level)
-	level = math.clamp(level, 1, 10)
-	return DEMON_STATS[level]
+local function getStatsForLevel(level, isBoss)
+	return EnemyProgressionModule.getCombatStats(level, isBoss, 1.12)
 end
 
 local function getHPColor(ratio)
@@ -217,7 +197,7 @@ local function createHPBar(parent, name, level)
 	billboard.Size = UDim2.fromScale(BAR_WIDTH, BAR_HEIGHT)
 	billboard.StudsOffset = Vector3.new(0, 3, 0)
 	billboard.AlwaysOnTop = true
-	billboard.MaxDistance = 120
+	billboard.MaxDistance = 300
 	billboard.LightInfluence = 0
 	billboard.Parent = parent
 
@@ -284,68 +264,33 @@ local function createHPBar(parent, name, level)
 	nameLabel.TextColor3 = Color3.fromRGB(120, 200, 255)
 	nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
 	nameLabel.TextStrokeTransparency = 0.4
-	nameLabel.Text = name .. " [Lv." .. level .. "]"
+	nameLabel.Text = name
 	nameLabel.ZIndex = 4
 	nameLabel.Parent = bg
+
+	local levelLabel = Instance.new("TextLabel")
+	levelLabel.Name = "LevelLabel"
+	levelLabel.Size = UDim2.fromScale(0.7, 0.7)
+	levelLabel.Position = UDim2.fromScale(0.15, -1.75)
+	levelLabel.BackgroundColor3 = Color3.fromRGB(22, 48, 72)
+	levelLabel.BackgroundTransparency = 0.12
+	levelLabel.BorderSizePixel = 0
+	levelLabel.Font = Enum.Font.GothamBlack
+	levelLabel.TextScaled = true
+	levelLabel.TextColor3 = Color3.fromRGB(185, 235, 255)
+	levelLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+	levelLabel.TextStrokeTransparency = 0.35
+	levelLabel.Text = "LEVEL " .. level
+	levelLabel.ZIndex = 5
+	levelLabel.Parent = bg
+	local levelCorner = Instance.new("UICorner")
+	levelCorner.CornerRadius = UDim.new(0, 5)
+	levelCorner.Parent = levelLabel
 
 	return billboard, fill, damageFill, label
 end
 
 local playEnemySFX
-
-local function spawnDemonAttackVFX(demon)
-	local root = demon:FindFirstChild("HumanoidRootPart") or demon.PrimaryPart
-	if not root then return end
-	playEnemySFX(root, "rbxasset://sounds/action_get_up.mp3", 0.34, 0.58)
-
-	local slash = Instance.new("Part")
-	slash.Name = "SnowDemonAttackSlash"
-	slash.Size = Vector3.new(0.15, 5, 5)
-	slash.CFrame = root.CFrame * CFrame.new(0, 0, -3) * CFrame.Angles(0, 0, math.rad(35))
-	slash.Anchored = true
-	slash.CanCollide = false
-	slash.CanQuery = false
-	slash.CanTouch = false
-	slash.CastShadow = false
-	slash.Material = Enum.Material.Neon
-	slash.Color = Color3.fromRGB(80, 180, 255)
-	slash.Transparency = 0.15
-	slash.Parent = workspace
-
-	local attachment = Instance.new("Attachment")
-	attachment.Parent = slash
-	local sparks = Instance.new("ParticleEmitter")
-	sparks.Name = "SnowDemonClawSparks"
-	sparks.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	sparks.Color = ColorSequence.new(Color3.fromRGB(180, 230, 255), Color3.fromRGB(60, 120, 220))
-	sparks.LightEmission = 0.9
-	sparks.Lifetime = NumberRange.new(0.18, 0.35)
-	sparks.Rate = 0
-	sparks.Speed = NumberRange.new(12, 28)
-	sparks.SpreadAngle = Vector2.new(120, 120)
-	sparks.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.45),
-		NumberSequenceKeypoint.new(1, 0),
-	})
-	sparks.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	sparks.Parent = attachment
-	sparks:Emit(28)
-
-	TweenService:Create(slash, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Size = Vector3.new(0.05, 8, 8),
-		Transparency = 1,
-		CFrame = root.CFrame * CFrame.new(0, 0, -4) * CFrame.Angles(0, 0, math.rad(-35)),
-	}):Play()
-
-	task.delay(0.35, function()
-		if slash and slash.Parent then
-			slash:Destroy()
-		end
-	end)
-end
 
 local function spawnBossDemonArtVFX(demon)
 	local root = demon:FindFirstChild("HumanoidRootPart") or demon.PrimaryPart
@@ -467,12 +412,13 @@ local function spawnDemon(spawnData)
 	local level = spawnData.level
 	local isBoss = spawnData.boss == true
 	local spawnCFrame = resolveSpawnCFrame(spawnData, isBoss)
-	local stats = isBoss and BOSS_STATS or getStatsForLevel(level)
+	local stats = getStatsForLevel(level, isBoss)
 	local enemyType = isBoss and "SnowDemonBoss" or "SnowDemon"
 	local displayName = isBoss and "Snow Demon Boss" or "Snow Demon"
 
 	local demon = DemonTemplate:Clone()
 	demon.Name = isBoss and "SnowDemonBoss" or ("SnowDemon_Lv" .. level)
+	demon.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 	for _, descendant in demon:GetDescendants() do
 		if descendant:IsA("LuaSourceContainer") then
 			descendant:Destroy()
@@ -526,6 +472,7 @@ local function spawnDemon(spawnData)
 
 	demon:SetAttribute("Level", level)
 	demon:SetAttribute("Damage", stats.damage)
+	demon:SetAttribute("DamageReduction", stats.damageReduction)
 	demon:SetAttribute("EnemyType", enemyType)
 	demon:SetAttribute("SpawnZone", spawnData.zone or "FrostSnowfield")
 	demon:SetAttribute("XPReward", stats.xp)
@@ -686,10 +633,22 @@ local function spawnDemon(spawnData)
 		if lastAttackerId then
 			local attacker = Players:GetPlayerByUserId(lastAttackerId)
 			if attacker then
-				CombatModule.grantStateProgressionEvent(attacker, "Kill")
+				-- selene: allow(global_usage)
+				if shared.ClanService and shared.ClanService.grantActivity then
+					-- selene: allow(global_usage)
+					shared.ClanService.grantActivity(
+						attacker,
+						isBoss and "BossKill" or "EnemyKill",
+						level * (isBoss and 10 or 3),
+						level * (isBoss and 5 or 2)
+					)
+				end
 				local rewardPlayers = CombatModule.getRewardPlayers(demon, attacker, 160)
+				local stateMultiplier = EnemyProgressionModule.getKillMultiplier(level, isBoss)
+				local masteryReward = EnemyProgressionModule.getMasteryXP(level, isBoss)
 				for _, rewardedPlayer in rewardPlayers do
 					PlayerDataModule.addXP(rewardedPlayer, stats.xp)
+					CombatModule.grantStateProgressionEvent(rewardedPlayer, "Kill", stateMultiplier)
 					debugRewardLog("Awarded " .. stats.xp .. " XP to " .. rewardedPlayer.Name)
 
 					-- selene: allow(global_usage)
@@ -706,9 +665,8 @@ local function spawnDemon(spawnData)
 
 					local data = PlayerDataModule.getData(rewardedPlayer)
 					if data and data.EquippedStyle and data.EquippedStyle ~= "" then
-						local rewardXP = isBoss and 35 or (MASTERY_KILL_REWARDS[level] or 3)
-						PlayerDataModule.addMasteryXP(rewardedPlayer, data.EquippedStyle, rewardXP)
-						debugRewardLog("Awarded " .. rewardXP .. " mastery XP to " .. rewardedPlayer.Name .. " for style " .. data.EquippedStyle)
+						PlayerDataModule.addMasteryXP(rewardedPlayer, data.EquippedStyle, masteryReward)
+						debugRewardLog("Awarded " .. masteryReward .. " mastery XP to " .. rewardedPlayer.Name .. " for style " .. data.EquippedStyle)
 					end
 				end
 			end
@@ -747,6 +705,7 @@ task.spawn(function()
 			local closestPlayer, dist = findPlayerInRadius(currentPos, AGGRO_RADIUS)
 			if closestPlayer then
 				local targetHRP = closestPlayer.Character and closestPlayer.Character:FindFirstChild("HumanoidRootPart")
+				local attackTargetPosition = targetHRP and targetHRP.Position
 				if targetHRP then
 					local targetPos = targetHRP.Position
 					local direction = targetPos - currentPos
@@ -820,8 +779,8 @@ task.spawn(function()
 							demonState.isAttacking = false
 						end)
 					else
-						attackAnimRemote:FireAllClients(demon)
-						spawnDemonAttackVFX(demon)
+						local vfxTarget = attackTargetPosition or (hrp.Position + hrp.CFrame.LookVector * 4)
+						attackAnimRemote:FireAllClients(demon, vfxTarget)
 
 						task.delay(ATTACK_WINDUP, function()
 							if not demonState.alive or not demon.Parent or demonState.humanoid.Health <= 0 then

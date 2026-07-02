@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -39,6 +40,10 @@ raceButton.TextColor3 = Color3.fromRGB(255, 215, 125)
 raceButton.Text = "RACE"
 raceButton.ZIndex = 10
 raceButton.Parent = screenGui
+if UserInputService.TouchEnabled then
+	raceButton.Size = UDim2.fromOffset(82, 40)
+	raceButton.Position = UDim2.fromOffset(102, 92)
+end
 do
 	local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0, 8)
@@ -85,6 +90,9 @@ panel.BackgroundColor3 = Color3.fromRGB(15, 18, 24)
 panel.BorderSizePixel = 0
 panel.ZIndex = 51
 panel.Parent = overlay
+if UserInputService.TouchEnabled then
+	panel.Size = UDim2.fromOffset(340, 350)
+end
 do
 	local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0, 8)

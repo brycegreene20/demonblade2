@@ -26,10 +26,14 @@ end
 StatConfig.BASE = {
 	MaxHP       = 150,
 	MaxStamina  = 100,
+	StaminaRegen = 12,
 	WalkSpeed   = 24,
 	DamageMult  = 1.0,
 	DefenseMult = 0.0,
 }
+
+StatConfig.STAMINA_REGEN_PER_POINT = 0.8
+StatConfig.STAMINA_CAPACITY_PER_POINT = 5
 
 StatConfig.LEGACY_KEY_MAP = {
 	BreathDamage = "Damage",
@@ -42,6 +46,16 @@ StatConfig.LEGACY_KEY_MAP = {
 
 function StatConfig.getDamageMultiplier(points)
 	return 1.0 + math.max(0, tonumber(points) or 0) * 0.03
+end
+
+function StatConfig.getStaminaRegen(points)
+	return StatConfig.BASE.StaminaRegen
+		+ math.max(0, tonumber(points) or 0) * StatConfig.STAMINA_REGEN_PER_POINT
+end
+
+function StatConfig.getMaxStamina(points)
+	return StatConfig.BASE.MaxStamina
+		+ math.max(0, tonumber(points) or 0) * StatConfig.STAMINA_CAPACITY_PER_POINT
 end
 
 StatConfig.STAT_POINTS_PER_LEVEL = 5

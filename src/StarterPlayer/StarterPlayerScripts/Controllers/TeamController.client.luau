@@ -1,6 +1,8 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -115,6 +117,12 @@ panel.BorderSizePixel = 0
 panel.Visible = false
 panel.ZIndex = 20
 panel.Parent = screenGui
+if UserInputService.TouchEnabled then
+	teamButton.Size = UDim2.fromOffset(82, 40)
+	teamButton.Position = UDim2.fromOffset(12, 92)
+	panel.Size = UDim2.new(1, -24, 1, -156)
+	panel.Position = UDim2.fromOffset(12, 144)
+end
 do
 	local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0, 8)
@@ -327,6 +335,231 @@ local function isMember(userId)
 	return false
 end
 
+local function isClanmate(player)
+	local localClanId = LocalPlayer:GetAttribute("ClanId")
+	return type(localClanId) == "string"
+		and localClanId ~= ""
+		and player:GetAttribute("ClanId") == localClanId
+end
+
+local function getRelationship(player)
+	local teammate = isMember(player.UserId)
+	local clanmate = isClanmate(player)
+	if teammate and clanmate then
+		return "TEAM + CLAN", Color3.fromRGB(70, 225, 220)
+	elseif teammate then
+		return "TEAMMATE", Color3.fromRGB(90, 175, 255)
+	elseif clanmate then
+		return "CLAN MEMBER", Color3.fromRGB(75, 225, 120)
+	end
+	return nil, nil
+end
+
+local function isLocalPlayerLeader()
+	for _, member in currentMembers do
+		if member.UserId == LocalPlayer.UserId then
+			return member.IsLeader == true
+		end
+	end
+	return false
+end
+
+local function clearTeammateVisual(player)
+	local character = player.Character
+	if character then
+		local highlight = character:FindFirstChild("TeamHighlight")
+		if highlight then highlight:Destroy() end
+		local marker = character:FindFirstChild("TeamMarker")
+		if marker then marker:Destroy() end
+	end
+end
+
+local function applyTeammateVisual(player)
+	local relationship, relationshipColor = getRelationship(player)
+	if player == LocalPlayer or not relationship then
+		clearTeammateVisual(player)
+		return
+	end
+	local character = player.Character
+	local head = character and character:FindFirstChild("Head")
+	if not character or not head then return end
+
+	local highlight = character:FindFirstChild("TeamHighlight")
+	if not highlight or not highlight:IsA("Highlight") then
+		highlight = Instance.new("Highlight")
+		highlight.Name = "TeamHighlight"
+		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		highlight.FillTransparency = 0.82
+		highlight.OutlineTransparency = 0.05
+		highlight.Adornee = character
+		highlight.Parent = character
+	end
+	highlight.FillColor = relationshipColor
+	highlight.OutlineColor = relationshipColor
+
+	local marker = character:FindFirstChild("TeamMarker")
+	if not marker or not marker:IsA("BillboardGui") then
+		marker = Instance.new("BillboardGui")
+		marker.Name = "TeamMarker"
+		marker.Adornee = head
+		marker.Size = UDim2.fromOffset(100, 20)
+		marker.StudsOffsetWorldSpace = Vector3.new(0, 5.1, 0)
+		marker.AlwaysOnTop = true
+		marker.MaxDistance = 0
+		marker.Parent = character
+
+		local label = Instance.new("TextLabel")
+		label.Name = "Label"
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Font = Enum.Font.GothamBold
+		label.TextSize = 11
+		label.TextStrokeColor3 = Color3.fromRGB(5, 20, 35)
+		label.TextStrokeTransparency = 0.2
+		label.Parent = marker
+	end
+	local label = marker:FindFirstChild("Label")
+	if label and label:IsA("TextLabel") then
+		label.Text = relationship
+		label.TextColor3 = relationshipColor
+	end
+end
+
+local function refreshTeammateVisuals()
+	for _, player in Players:GetPlayers() do
+		applyTeammateVisual(player)
+	end
+end
+
+local function observePlayerCharacter(player)
+	player:GetAttributeChangedSignal("ClanId"):Connect(function()
+		applyTeammateVisual(player)
+	end)
+	player.CharacterAdded:Connect(function()
+		task.wait(0.4)
+		applyTeammateVisual(player)
+	end)
+	if player.Character then
+		task.defer(applyTeammateVisual, player)
+	end
+end
+
+LocalPlayer:GetAttributeChangedSignal("ClanId"):Connect(refreshTeammateVisuals)
+
+local edgeMarkers = {}
+local function getEdgeMarker(player)
+	local marker = edgeMarkers[player]
+	if marker then return marker end
+
+	marker = Instance.new("Frame")
+	marker.Name = "SocialDirection_" .. player.UserId
+	marker.Size = UDim2.fromOffset(132, 30)
+	marker.AnchorPoint = Vector2.new(0.5, 0.5)
+	marker.BackgroundColor3 = Color3.fromRGB(10, 16, 22)
+	marker.BackgroundTransparency = 0.16
+	marker.BorderSizePixel = 0
+	marker.ZIndex = 40
+	marker.Visible = false
+	marker.Parent = screenGui
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 6)
+	corner.Parent = marker
+	local stroke = Instance.new("UIStroke")
+	stroke.Name = "Stroke"
+	stroke.Thickness = 1.5
+	stroke.Parent = marker
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Name = "NameLabel"
+	nameLabel.Size = UDim2.new(1, -30, 1, 0)
+	nameLabel.Position = UDim2.fromOffset(6, 0)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 11
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.ZIndex = 41
+	nameLabel.Parent = marker
+
+	local arrow = Instance.new("TextLabel")
+	arrow.Name = "Arrow"
+	arrow.Size = UDim2.fromOffset(24, 24)
+	arrow.Position = UDim2.new(1, -27, 0.5, 0)
+	arrow.AnchorPoint = Vector2.new(0, 0.5)
+	arrow.BackgroundTransparency = 1
+	arrow.Font = Enum.Font.GothamBlack
+	arrow.Text = ">"
+	arrow.TextSize = 20
+	arrow.ZIndex = 41
+	arrow.Parent = marker
+
+	edgeMarkers[player] = marker
+	return marker
+end
+
+local edgeUpdateAccumulator = 0
+RunService.RenderStepped:Connect(function(dt)
+	edgeUpdateAccumulator += dt
+	if edgeUpdateAccumulator < 0.1 then return end
+	edgeUpdateAccumulator = 0
+
+	local camera = workspace.CurrentCamera
+	if not camera then return end
+	local viewport = camera.ViewportSize
+	local center = viewport * 0.5
+	local margin = Vector2.new(84, 50)
+
+	for _, player in Players:GetPlayers() do
+		if player == LocalPlayer then continue end
+		local relationship, color = getRelationship(player)
+		local marker = getEdgeMarker(player)
+		if not relationship then
+			marker.Visible = false
+			continue
+		end
+
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local worldPosition = root and root.Position or player:GetAttribute("LobbyPosition")
+		if typeof(worldPosition) ~= "Vector3" then
+			marker.Visible = false
+			continue
+		end
+
+		local screenPoint, onScreen = camera:WorldToViewportPoint(worldPosition)
+		if onScreen and screenPoint.Z > 0 then
+			marker.Visible = false
+			continue
+		end
+
+		local rawDirection = Vector2.new(screenPoint.X, screenPoint.Y) - center
+		if screenPoint.Z < 0 then rawDirection = -rawDirection end
+		if rawDirection.Magnitude < 0.01 then rawDirection = Vector2.new(0, -1) end
+		local direction = rawDirection.Unit
+		local maxX = math.max(1, center.X - margin.X)
+		local maxY = math.max(1, center.Y - margin.Y)
+		local scale = math.min(
+			math.abs(direction.X) > 0 and maxX / math.abs(direction.X) or math.huge,
+			math.abs(direction.Y) > 0 and maxY / math.abs(direction.Y) or math.huge
+		)
+		local edgePosition = center + direction * scale
+		marker.Position = UDim2.fromOffset(edgePosition.X, edgePosition.Y)
+		marker.Visible = true
+		local nameLabel = marker:FindFirstChild("NameLabel")
+		local arrow = marker:FindFirstChild("Arrow")
+		local stroke = marker:FindFirstChild("Stroke")
+		if nameLabel and nameLabel:IsA("TextLabel") then
+			nameLabel.Text = player.DisplayName
+			nameLabel.TextColor3 = color
+		end
+		if arrow and arrow:IsA("TextLabel") then
+			arrow.TextColor3 = color
+			arrow.Rotation = math.deg(math.atan2(direction.Y, direction.X))
+		end
+		if stroke and stroke:IsA("UIStroke") then stroke.Color = color end
+	end
+end)
+
 local function updateMembersText()
 	if #currentMembers == 0 then
 		memberLabel.Text = "SOLO\nInvite players in this server to form a team."
@@ -432,8 +665,14 @@ local function rebuildPlayerList()
 		invite.TextSize = 11
 		invite.TextColor3 = Color3.fromRGB(220, 240, 255)
 		local inviteSent = sentInvites[player.UserId] == true
-		invite.Text = if isMember(player.UserId) then "Joined" elseif inviteSent then "Sent" else "+ Invite"
-		invite.AutoButtonColor = not isMember(player.UserId) and not inviteSent
+		local teammate = isMember(player.UserId)
+		local canRemove = teammate and isLocalPlayerLeader()
+		invite.Text = if canRemove then "Remove" elseif teammate then "Joined" elseif inviteSent then "Sent" else "+ Invite"
+		invite.AutoButtonColor = canRemove or (not teammate and not inviteSent)
+		if canRemove then
+			invite.BackgroundColor3 = Color3.fromRGB(105, 42, 52)
+			invite.TextColor3 = Color3.fromRGB(255, 220, 225)
+		end
 		if inviteSent then
 			invite.BackgroundColor3 = Color3.fromRGB(48, 58, 72)
 			invite.TextColor3 = Color3.fromRGB(140, 175, 205)
@@ -447,7 +686,14 @@ local function rebuildPlayerList()
 			c.CornerRadius = UDim.new(0, 6)
 			c.Parent = invite
 		end
-		if not isMember(player.UserId) and not inviteSent then
+		if canRemove then
+			invite.MouseButton1Click:Connect(function()
+				invite.Text = "Removing..."
+				invite.Active = false
+				TeamLeaveRemote:FireServer(player.UserId)
+				statusLabel.Text = "Removing " .. player.DisplayName
+			end)
+		elseif not teammate and not inviteSent then
 			invite.MouseButton1Click:Connect(function()
 				invite.Text = "Sending..."
 				invite.Active = false
@@ -578,18 +824,28 @@ TeamUpdateRemote.OnClientEvent:Connect(function(payload)
 		end
 	end
 	updateMembersText()
+	refreshTeammateVisuals()
 	if panelOpen then
 		rebuildPlayerList()
 	end
 end)
 
-Players.PlayerAdded:Connect(function()
+for _, player in Players:GetPlayers() do
+	observePlayerCharacter(player)
+end
+
+Players.PlayerAdded:Connect(function(player)
+	observePlayerCharacter(player)
 	if panelOpen then
 		rebuildPlayerList()
 	end
 end)
 
-Players.PlayerRemoving:Connect(function()
+Players.PlayerRemoving:Connect(function(player)
+	clearTeammateVisual(player)
+	local marker = edgeMarkers[player]
+	if marker then marker:Destroy() end
+	edgeMarkers[player] = nil
 	if panelOpen then
 		rebuildPlayerList()
 	end

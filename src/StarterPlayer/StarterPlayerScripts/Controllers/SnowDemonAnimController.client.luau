@@ -1,11 +1,16 @@
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Debris = game:GetService("Debris")
+local Players = game:GetService("Players")
 
 local IDLE_ID = "rbxassetid://97520328547508"
 local WALK_ID = "rbxassetid://77060023937248"
 local ATTACK_ID = "rbxassetid://128721527688471"
 local MOVE_THRESHOLD = 0.05
 local WALK_TIMEOUT = 0.75
+local VFX_RENDER_DISTANCE = 180
+local FROST_PRIMARY = Color3.fromRGB(90, 205, 255)
+local FROST_SECONDARY = Color3.fromRGB(225, 250, 255)
 
 -- Track tables keyed by demon model so the remote handler can reach any demon's tracks.
 local idleTracks = {}
@@ -13,9 +18,110 @@ local walkTracks = {}
 local attackTracks = {}
 
 local attackAnimRemote = ReplicatedStorage:WaitForChild("SnowDemonAttackAnim")
+local vfxAssets = ReplicatedStorage:WaitForChild("VFXAssets")
+local soundAssets = ReplicatedStorage:WaitForChild("Assets")
+local localPlayer = Players.LocalPlayer
+local missingVFXWarnings = {}
 
-attackAnimRemote.OnClientEvent:Connect(function(demon)
-	print("[SnowDemonAnim] Remote received for", demon.Name)
+local function findVFXTemplate(templateName)
+	local container = vfxAssets:FindFirstChild("AnimeParticles")
+	local template = container and container:FindFirstChild(templateName, true)
+	if not template and not missingVFXWarnings[templateName] then
+		missingVFXWarnings[templateName] = true
+		warn(("[SnowDemonAnim] Missing owned VFX template AnimeParticles/%s"):format(templateName))
+	end
+	return template
+end
+
+local function spawnFrostBurst(templateName, cframe, particleCount, lifetime)
+	local template = findVFXTemplate(templateName)
+	if not template then return end
+
+	local clone = template:Clone()
+	if clone:IsA("BasePart") then
+		clone.CFrame = cframe
+		clone.Anchored = true
+		clone.CanCollide = false
+		clone.CanQuery = false
+		clone.CanTouch = false
+		clone.CastShadow = false
+	elseif clone:IsA("Model") then
+		clone:PivotTo(cframe)
+	end
+
+	for _, descendant in clone:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			descendant.Anchored = true
+			descendant.CanCollide = false
+			descendant.CanQuery = false
+			descendant.CanTouch = false
+			descendant.CastShadow = false
+		elseif descendant:IsA("ParticleEmitter") then
+			descendant.Enabled = false
+			descendant.Color = ColorSequence.new(FROST_PRIMARY, FROST_SECONDARY)
+		elseif descendant:IsA("Trail") or descendant:IsA("Beam") then
+			descendant.Color = ColorSequence.new(FROST_PRIMARY, FROST_SECONDARY)
+		end
+	end
+
+	clone.Parent = workspace
+	for _, descendant in clone:GetDescendants() do
+		if descendant:IsA("ParticleEmitter") then
+			local authoredCount = tonumber(descendant:GetAttribute("EmitCount")) or 0
+			descendant:Emit(math.max(particleCount, authoredCount))
+		end
+	end
+	Debris:AddItem(clone, lifetime)
+end
+
+local function playOwnedSlashSound(root)
+	local container = soundAssets:FindFirstChild("Slashes anime")
+	if not container then return end
+
+	local source = if container:IsA("Sound") and container.SoundId ~= ""
+		then container
+		else container:FindFirstChildWhichIsA("Sound", true)
+	if not source then return end
+
+	local sound = source:Clone()
+	sound.Volume = 0.24
+	sound.RollOffMaxDistance = 75
+	sound.Parent = root
+	sound:Play()
+	Debris:AddItem(sound, 3)
+end
+
+local function playFrostAttackVFX(demon, targetPosition)
+	local root = demon:FindFirstChild("HumanoidRootPart") or demon.PrimaryPart
+	if not root or typeof(targetPosition) ~= "Vector3" then return end
+
+	local localCharacter = localPlayer.Character
+	local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+	if localRoot and (localRoot.Position - root.Position).Magnitude > VFX_RENDER_DISTANCE then
+		return
+	end
+
+	local origin = root.Position + Vector3.new(0, 1.5, 0)
+	local flatTarget = Vector3.new(targetPosition.X, origin.Y, targetPosition.Z)
+	local direction = flatTarget - origin
+	if direction.Magnitude < 0.1 then
+		direction = root.CFrame.LookVector
+	end
+
+	local attackCFrame = CFrame.lookAt(origin, origin + direction.Unit)
+	spawnFrostBurst("Wind-02", attackCFrame, 12, 0.65)
+	spawnFrostBurst("Slashes-01", attackCFrame * CFrame.new(0, 0, -3), 24, 0.75)
+	playOwnedSlashSound(root)
+
+	task.delay(0.28, function()
+		if not demon.Parent or not root.Parent then return end
+		local impactPosition = root.Position + direction.Unit * 4 + Vector3.new(0, 1.2, 0)
+		spawnFrostBurst("Slash-Impact-01", CFrame.lookAt(impactPosition, impactPosition + direction.Unit), 20, 0.65)
+	end)
+end
+
+attackAnimRemote.OnClientEvent:Connect(function(demon, targetPosition)
+	if not demon or not demon:IsA("Model") then return end
 	local idleTrack = idleTracks[demon]
 	local walkTrack = walkTracks[demon]
 	local attackTrack = attackTracks[demon]
@@ -30,6 +136,7 @@ attackAnimRemote.OnClientEvent:Connect(function(demon)
 		walkTrack:Stop(0.05)
 	end
 	attackTrack:Play(0)
+	playFrostAttackVFX(demon, targetPosition)
 end)
 
 local function setupDemon(demon)

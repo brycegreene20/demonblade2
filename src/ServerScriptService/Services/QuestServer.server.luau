@@ -62,8 +62,9 @@ local function canAcceptQuest(player, questId)
 	local data = PlayerDataModule.getData(player)
 	if not data then return false, "No player data" end
 
-	if quest.requiredLevel and data.Level < quest.requiredLevel then
-		return false, "Level too low"
+	local meetsLevel, requiredLevel, currentLevel = QuestDataModule.meetsLevelRequirement(quest, data.Level)
+	if not meetsLevel then
+		return false, ("Requires player level %d (you are level %d)"):format(requiredLevel, currentLevel)
 	end
 
 	if quest.prerequisite then
@@ -131,6 +132,11 @@ local function completeQuest(player)
 	end
 	if data and data.EquippedTitle and data.EquippedTitle ~= "" and rewards.TitleXP > 0 then
 		PlayerDataModule.addTitleXP(player, data.EquippedTitle, rewards.TitleXP)
+	end
+	-- selene: allow(global_usage)
+	if shared.ClanService and shared.ClanService.grantActivity then
+		-- selene: allow(global_usage)
+		shared.ClanService.grantActivity(player, "QuestCompleted", math.max(5, math.floor(rewards.XP * 0.1)), 5)
 	end
 
 	QuestCompletedRemote:FireClient(player, {

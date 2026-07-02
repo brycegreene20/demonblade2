@@ -22,6 +22,7 @@ local BlockParryVFXRemote = Remotes:WaitForChild("BlockParryVFX")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local SkillSystemModule = require(Modules:WaitForChild("SkillSystemModule"))
 local MasteryModule = require(Modules:WaitForChild("MasteryModule"))
+local CombatPresentationModule = require(Modules:WaitForChild("CombatPresentationModule"))
 
 local COMBO_RESET_TIME = 1.2
 local MAX_COMBO = 4
@@ -39,13 +40,6 @@ local blockShieldPart = nil
 local blockShieldTween = nil
 local MAX_BLOCK_DURATION = 5
 local blockSafetyThread = nil
-
-local COMBO_COLORS = {
-	Color3.fromRGB(255, 255, 255),
-	Color3.fromRGB(200, 220, 255),
-	Color3.fromRGB(170, 200, 255),
-	Color3.fromRGB(255, 200, 100),
-}
 
 local COMBO_LUNGE = {3, 4, 5, 8}
 
@@ -96,46 +90,7 @@ local function shakeCamera()
 end
 
 local function spawnSwingVFX(character, hitIndex)
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
-
-	local slash = Instance.new("Part")
-	slash.Name = "SlashVFX"
-	slash.Size = Vector3.new(0.2, 3, 3)
-	slash.Anchored = true
-	slash.CanCollide = false
-	slash.CanQuery = false
-	slash.CanTouch = false
-	slash.Material = Enum.Material.Neon
-	slash.Color = COMBO_COLORS[hitIndex] or COMBO_COLORS[1]
-	slash.Transparency = 0.3
-	slash.CastShadow = false
-
-	local angles = {0, 45, -30, 90}
-	local angle = math.rad(angles[hitIndex] or 0)
-	slash.CFrame = hrp.CFrame * CFrame.new(0, 0, -3) * CFrame.Angles(0, 0, angle)
-	slash.Parent = workspace
-
-	local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	local tween = TweenService:Create(slash, tweenInfo, {
-		Transparency = 1,
-		Size = Vector3.new(0.05, 5, 5),
-	})
-	tween:Play()
-	Debris:AddItem(slash, 0.25)
-end
-
-local function playSwingSound(character, hitIndex)
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
-
-	local sound = Instance.new("Sound")
-	sound.SoundId = "rbxasset://sounds/action_get_up.mp3"
-	sound.Volume = 0.4
-	sound.PlaybackSpeed = 0.9 + (hitIndex * 0.1)
-	sound.Parent = hrp
-	sound:Play()
-	Debris:AddItem(sound, 1)
+	CombatPresentationModule.playBasicSwing(character, hitIndex)
 end
 
 local function applyLunge(character, hitIndex)
@@ -171,7 +126,6 @@ local function performLightAttack()
 	LightAttackRemote:FireServer()
 
 	spawnSwingVFX(character, comboIndex)
-	playSwingSound(character, comboIndex)
 	applyLunge(character, comboIndex)
 
 	local _animTrack = playComboAnimation(humanoid, comboIndex)
@@ -204,7 +158,6 @@ LightAttackRemote.OnClientEvent:Connect(function(serverComboIndex, didHit, sourc
 		local otherChar = sourcePlayer.Character
 		if otherChar then
 			spawnSwingVFX(otherChar, serverComboIndex)
-			playSwingSound(otherChar, serverComboIndex)
 		end
 		return
 	end
@@ -239,69 +192,8 @@ local function playOneShotSound(parent, soundId, volume, playbackSpeed, rolloffD
 	Debris:AddItem(sound, 2)
 end
 
-local function spawnDamageImpactVFX(targetModel, hitPos, isCritical, effectStyle, skillId)
-	local targetPart = targetModel:FindFirstChild("HumanoidRootPart") or targetModel:FindFirstChild("Head")
-	if not targetPart then return end
-
-	local primaryColor, secondaryColor, soundId, playbackSpeed = getImpactProfile(effectStyle, skillId)
-	local position = typeof(hitPos) == "Vector3" and hitPos or targetPart.Position
-	local anchor = Instance.new("Part")
-	anchor.Name = "DamageImpactVFX"
-	anchor.Size = Vector3.new(0.2, 0.2, 0.2)
-	anchor.Anchored = true
-	anchor.CanCollide = false
-	anchor.CanQuery = false
-	anchor.CanTouch = false
-	anchor.Transparency = 1
-	anchor.CFrame = CFrame.new(position)
-	anchor.Parent = workspace
-
-	local attachment = Instance.new("Attachment")
-	attachment.Parent = anchor
-
-	local burst = Instance.new("ParticleEmitter")
-	burst.Name = "StyleImpactBurst"
-	burst.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	burst.Color = ColorSequence.new(primaryColor, secondaryColor)
-	burst.LightEmission = 0.8
-	burst.Lifetime = NumberRange.new(0.18, 0.38)
-	burst.Rate = 0
-	burst.Speed = NumberRange.new(isCritical and 24 or 14, isCritical and 34 or 22)
-	burst.SpreadAngle = Vector2.new(180, 180)
-	burst.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, isCritical and 1.1 or 0.7),
-		NumberSequenceKeypoint.new(1, 0),
-	})
-	burst.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.05),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	burst.Parent = attachment
-	burst:Emit(isCritical and 36 or 20)
-
-	local ring = Instance.new("Part")
-	ring.Name = "StyleImpactRing"
-	ring.Shape = Enum.PartType.Cylinder
-	ring.Size = Vector3.new(0.18, isCritical and 4.5 or 3, isCritical and 4.5 or 3)
-	ring.Anchored = true
-	ring.CanCollide = false
-	ring.CanQuery = false
-	ring.CanTouch = false
-	ring.Material = Enum.Material.Neon
-	ring.Color = primaryColor
-	ring.Transparency = 0.18
-	ring.CastShadow = false
-	ring.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
-	ring.Parent = workspace
-
-	TweenService:Create(ring, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Size = Vector3.new(0.05, isCritical and 8 or 5, isCritical and 8 or 5),
-		Transparency = 1,
-	}):Play()
-
-	playOneShotSound(targetPart, soundId, isCritical and 0.42 or 0.28, playbackSpeed, 70)
-	Debris:AddItem(ring, 0.35)
-	Debris:AddItem(anchor, 1)
+local function spawnDamageImpactVFX(targetModel, hitPos, isCritical, effectStyle, _skillId)
+	CombatPresentationModule.playDamageImpact(targetModel, hitPos, isCritical, effectStyle)
 end
 
 DamageDealt.OnClientEvent:Connect(function(targetModel, amount, hitPos, isCritical, effectStyle, skillId)
@@ -480,19 +372,27 @@ skillBarLayout.SortOrder = Enum.SortOrder.LayoutOrder
 skillBarLayout.Parent = skillBarContainer
 
 local skillSlotFrames = {}
+local useSkill
 
 local function createSkillSlotUI(slotKey)
 	local isUlt = slotKey == ULTIMATE_SLOT
 	local slotSize = if isUlt then 70 else 60
 
-	local frame = Instance.new("Frame")
+	local frame = Instance.new("TextButton")
 	frame.Name = slotKey .. "Slot"
 	frame.Size = UDim2.fromOffset(slotSize, slotSize)
 	frame.BackgroundColor3 = Color3.fromRGB(15, 18, 25)
 	frame.BackgroundTransparency = 0.2
 	frame.BorderSizePixel = 0
+	frame.Text = ""
+	frame.AutoButtonColor = false
 	frame.LayoutOrder = SLOT_ORDER[slotKey] or 99
 	frame.Parent = skillBarContainer
+	frame.Activated:Connect(function()
+		if UserInputService.TouchEnabled and useSkill then
+			useSkill(slotKey)
+		end
+	end)
 
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 8)
@@ -2549,7 +2449,7 @@ local function skillCameraShake()
 	end)
 end
 
-local function useSkill(slot)
+useSkill = function(slot)
 	if isUsingSkill or isAttacking or isBlocking then return end
 
 	local skill = skillSlots[slot]
@@ -2993,6 +2893,71 @@ BlockParryVFXRemote.OnClientEvent:Connect(function(eventType, sourcePlayer, char
 end)
 
 -- ==================== INPUT ====================
+if UserInputService.TouchEnabled then
+	local scale = Instance.new("UIScale")
+	scale.Scale = 0.76
+	scale.Parent = skillBarContainer
+	skillBarContainer.Position = UDim2.new(0.5, 0, 1, -14)
+
+	local blockHint = skillBarGui:FindFirstChild("BlockHint")
+	if blockHint then
+		blockHint.Visible = false
+	end
+
+	local function makeMobileCombatButton(name, text, position, color)
+		local button = Instance.new("TextButton")
+		button.Name = name
+		button.Size = UDim2.fromOffset(68, 68)
+		button.Position = position
+		button.AnchorPoint = Vector2.new(1, 1)
+		button.BackgroundColor3 = color
+		button.BackgroundTransparency = 0.12
+		button.BorderSizePixel = 0
+		button.Font = Enum.Font.GothamBold
+		button.TextSize = 12
+		button.TextColor3 = Color3.fromRGB(240, 248, 255)
+		button.Text = text
+		button.AutoButtonColor = true
+		button.ZIndex = 20
+		button.Parent = skillBarGui
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(1, 0)
+		corner.Parent = button
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Color3.fromRGB(175, 220, 255)
+		stroke.Thickness = 1.5
+		stroke.Transparency = 0.2
+		stroke.Parent = button
+		return button
+	end
+
+	local attackButton = makeMobileCombatButton(
+		"MobileAttack",
+		"ATTACK",
+		UDim2.new(1, -24, 1, -190),
+		Color3.fromRGB(125, 45, 52)
+	)
+	attackButton.Activated:Connect(performLightAttack)
+
+	local blockButton = makeMobileCombatButton(
+		"MobileBlock",
+		"BLOCK",
+		UDim2.new(1, -104, 1, -142),
+		Color3.fromRGB(35, 82, 125)
+	)
+	blockButton.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			startBlock()
+		end
+	end)
+	blockButton.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			stopBlock()
+		end
+	end)
+end
+
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.KeyCode == Enum.KeyCode.ButtonX then

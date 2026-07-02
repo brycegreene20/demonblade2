@@ -165,6 +165,7 @@ end
 local function buildR6Rig(config)
 	local model = Instance.new("Model")
 	model.Name = config.id
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 
 	local rootCFrame = CFrame.new(config.position) * CFrame.Angles(0, math.rad(config.facingAngle), 0)
 

@@ -24,7 +24,7 @@ PlayerDataModule.DEFAULTS = {
 	HP = StatConfig.BASE.MaxHP,
 	MaxStamina = StatConfig.BASE.MaxStamina,
 	Stamina = StatConfig.BASE.MaxStamina,
-	StaminaRegen = 10,
+	StaminaRegen = StatConfig.BASE.StaminaRegen,
 	StaminaRegenPause = 0.5,
 	WalkSpeed = StatConfig.BASE.WalkSpeed,
 	JumpPower = 50,
@@ -49,6 +49,8 @@ PlayerDataModule.DEFAULTS = {
 	SkillsUnlocked = {},
 	Mastery = {},
 	Bounty = 0,
+	ClanId = "",
+	ClanReputation = 0,
 	Race = RaceModule.DEFAULT_RACE,
 	RaceSpins = RaceModule.STARTING_SPINS,
 	StatPointsMigrated = false,
@@ -71,7 +73,7 @@ local SAVE_FIELDS = {
 	"Level", "XP", "TotalXP",
 	"Damage", "BreathDamage", "DemonArtDamage", "Health", "Defense", "StaminaStat", "MovementSpeed",
 	"StatPoints", "Faction", "Inventory", "RebirthCount", "SkillsUnlocked",
-	"Mastery", "Bounty", "Race", "RaceSpins", "StatPointsMigrated", "lastRespecTime",
+	"Mastery", "Bounty", "ClanId", "ClanReputation", "Race", "RaceSpins", "StatPointsMigrated", "lastRespecTime",
 	"EquippedStyle", "Titles", "EquippedTitle",
 	"TotalFocusXP", "TotalFocusRebirths",
 	"SelflessStateXP", "SelflessDodgePoints",
@@ -110,6 +112,21 @@ local function getSelflessNumber(player, methodName, defaultValue)
 	-- selene: allow(global_usage)
 	local selflessServer = shared and shared.SelflessStateServer
 	local method = selflessServer and selflessServer[methodName]
+	if type(method) ~= "function" then
+		return defaultValue
+	end
+
+	local ok, result = pcall(method, player)
+	if ok and type(result) == "number" then
+		return result
+	end
+	return defaultValue
+end
+
+local function getClanNumber(player, methodName, defaultValue)
+	-- selene: allow(global_usage)
+	local clanService = shared and shared.ClanService
+	local method = clanService and clanService[methodName]
 	if type(method) ~= "function" then
 		return defaultValue
 	end
@@ -234,7 +251,8 @@ end
 
 function PlayerDataModule.computeStats(data)
 	local maxHP = StatConfig.BASE.MaxHP + (data.Health * 15)
-	local maxStamina = StatConfig.BASE.MaxStamina + (data.StaminaStat * 5)
+	local maxStamina = StatConfig.getMaxStamina(data.StaminaStat)
+	local staminaRegen = StatConfig.getStaminaRegen(data.StaminaStat)
 	local walkSpeed = math.min(StatConfig.BASE.WalkSpeed + (data.MovementSpeed * 0.5), 40)
 	local defenseMultiplier = math.min(data.Defense * 0.008, 0.64)
 
@@ -264,6 +282,7 @@ function PlayerDataModule.computeStats(data)
 	return RaceModule.applyToStats({
 		maxHP = maxHP,
 		maxStamina = maxStamina,
+		staminaRegen = staminaRegen,
 		walkSpeed = walkSpeed,
 		damageMultiplier = damageMultiplier,
 		defenseMultiplier = defenseMultiplier,
@@ -274,7 +293,7 @@ function PlayerDataModule.getDamageMultiplier(player)
 	local data = playerData[player]
 	if not data then return 1 end
 	local stats = PlayerDataModule.computeStats(data)
-	return stats.damageMultiplier
+	return stats.damageMultiplier * getClanNumber(player, "getDamageBonusMultiplier", 1)
 end
 
 function PlayerDataModule.getDefenseMultiplier(player)
@@ -329,6 +348,7 @@ function PlayerDataModule.applyStatEffects(player)
 
 	data.MaxHP = stats.maxHP
 	data.MaxStamina = stats.maxStamina
+	data.StaminaRegen = stats.staminaRegen
 	data.WalkSpeed = stats.walkSpeed
 
 	humanoid.WalkSpeed = PlayerDataModule.getEffectiveWalkSpeed(player)
@@ -366,6 +386,7 @@ function PlayerDataModule.sendStatPointsUpdate(player)
 		EquippedStyle = data.EquippedStyle or "",
 		DerivedMaxHP = stats.maxHP,
 		DerivedMaxStamina = stats.maxStamina,
+		DerivedStaminaRegen = stats.staminaRegen,
 		DerivedWalkSpeed = stats.walkSpeed,
 		DerivedDamageMultiplier = stats.damageMultiplier,
 		DerivedDefenseMultiplier = stats.defenseMultiplier,
@@ -381,6 +402,8 @@ function PlayerDataModule.addXP(player, amount)
 	local data = playerData[player]
 	if not data then return end
 
+	amount = math.max(0, tonumber(amount) or 0)
+	amount = math.floor(amount * getClanNumber(player, "getXPBonusMultiplier", 1) + 0.5)
 	data.XP = data.XP + amount
 	data.TotalXP = data.TotalXP + amount
 
@@ -398,6 +421,7 @@ function PlayerDataModule.addXP(player, amount)
 		local stats = PlayerDataModule.computeStats(data)
 		data.MaxHP = stats.maxHP
 		data.MaxStamina = stats.maxStamina
+		data.StaminaRegen = stats.staminaRegen
 		data.HP = data.MaxHP
 		data.Stamina = data.MaxStamina
 
@@ -428,6 +452,22 @@ function PlayerDataModule.addXP(player, amount)
 	end
 
 	return levelsGained
+end
+
+function PlayerDataModule.setClanMembership(player, clanId, reputation)
+	local data = playerData[player]
+	if not data then return false end
+	data.ClanId = type(clanId) == "string" and clanId or ""
+	data.ClanReputation = math.max(0, math.floor(tonumber(reputation) or 0))
+	return true
+end
+
+function PlayerDataModule.addClanReputation(player, amount)
+	local data = playerData[player]
+	if not data then return 0 end
+	local granted = math.max(0, math.floor(tonumber(amount) or 0))
+	data.ClanReputation = math.max(0, (data.ClanReputation or 0) + granted)
+	return data.ClanReputation
 end
 
 function PlayerDataModule.allocateStat(player, statName)
@@ -792,6 +832,7 @@ function PlayerDataModule.loadSavePayload(player, payload)
 	local stats = PlayerDataModule.computeStats(data)
 	data.MaxHP = stats.maxHP
 	data.MaxStamina = stats.maxStamina
+	data.StaminaRegen = stats.staminaRegen
 	data.WalkSpeed = stats.walkSpeed
 	data.HP = data.MaxHP
 	data.Stamina = data.MaxStamina
@@ -827,6 +868,7 @@ function PlayerDataModule.initPlayer(player)
 	local stats = PlayerDataModule.computeStats(data)
 	data.MaxHP = stats.maxHP
 	data.MaxStamina = stats.maxStamina
+	data.StaminaRegen = stats.staminaRegen
 	data.WalkSpeed = stats.walkSpeed
 	data.HP = data.MaxHP
 	data.Stamina = data.MaxStamina
@@ -937,7 +979,8 @@ function PlayerDataModule.startStaminaRegen(player)
 			local effMax = PlayerDataModule.getEffectiveMaxStamina(player)
 			if now >= pauseUntil and data.Stamina < effMax then
 				local regenMultiplier = getSelflessNumber(player, "getStaminaRegenMultiplier", 1)
-				data.Stamina = math.min(data.Stamina + data.StaminaRegen * regenMultiplier * 0.1, effMax)
+				local regenRate = data.StaminaRegen or StatConfig.getStaminaRegen(data.StaminaStat)
+				data.Stamina = math.min(data.Stamina + regenRate * regenMultiplier * 0.1, effMax)
 				StaminaChanged:FireClient(player, data.Stamina, effMax)
 			end
 		end
@@ -976,6 +1019,7 @@ function PlayerDataModule.onCharacterAdded(player)
 	local stats = PlayerDataModule.computeStats(data)
 	data.MaxHP = stats.maxHP
 	data.MaxStamina = stats.maxStamina
+	data.StaminaRegen = stats.staminaRegen
 	data.WalkSpeed = stats.walkSpeed
 	data.HP = data.MaxHP
 	data.Stamina = data.MaxStamina
