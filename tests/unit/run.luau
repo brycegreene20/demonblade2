@@ -162,6 +162,7 @@ local CombatVFXConfigModule = loadModule("src/ReplicatedStorage/Modules/CombatVF
 local EnemyProgressionModule = loadModule("src/ReplicatedStorage/Modules/EnemyProgressionModule.luau")
 local DataPersistencePolicyModule = loadModule("src/ReplicatedStorage/Modules/DataPersistencePolicyModule.luau")
 local ClanModule = loadModule("src/ReplicatedStorage/Modules/ClanModule.luau")
+local CompanionModule = loadModule("src/ReplicatedStorage/Modules/CompanionModule.luau")
 
 test("persistence policy permits writes only after a successful load", function()
 	expectEqual(DataPersistencePolicyModule.canWrite(true), true, "successful load can save")
@@ -1109,6 +1110,76 @@ test("Frost demons have distinct spawns and a separated boss arena", function()
 			)
 		end
 	end
+end)
+
+-- ==================== CompanionModule ====================
+local deterministicRandom = {}
+function deterministicRandom:NextInteger(minimum, _maximum)
+	return minimum
+end
+function deterministicRandom:NextNumber()
+	return 0.5
+end
+
+test("new companions roll two unique buffs plus one fixed species stat", function()
+	local crow = CompanionModule.createCompanion("KasugaiCrow", "crow-a", deterministicRandom)
+	expectTruthy(crow, "crow created")
+	expectEqual(crow.Tier, 1, "starting tier")
+	expectEqual(#crow.Buffs, 2, "starting random buff count")
+	expectTruthy(crow.Buffs[1].Key ~= crow.Buffs[2].Key, "starting buffs are unique")
+
+	local bonuses = CompanionModule.getBonuses(crow)
+	expectTruthy((bonuses.MasteryXP or 0) >= 0.05, "crow fixed mastery stat applies")
+end)
+
+test("companion fusion requires matching species and tiers", function()
+	local primary = CompanionModule.createCompanion("KasugaiCrow", "crow-primary", deterministicRandom)
+	local matching = CompanionModule.createCompanion("KasugaiCrow", "crow-material", deterministicRandom)
+	local different = CompanionModule.createCompanion("PaperShikigami", "paper-material", deterministicRandom)
+
+	local mismatchAllowed = CompanionModule.canFuse(primary, different)
+	expectEqual(mismatchAllowed, false, "different species cannot fuse")
+
+	local fused, result = CompanionModule.fuse(primary, matching, deterministicRandom)
+	expectEqual(fused, true, "matching companions fuse")
+	expectEqual(result.Tier, 2, "fusion raises tier")
+	expectEqual(#result.Buffs, 3, "tier two unlocks a third buff")
+end)
+
+test("companion fusion progression caps at five randomized buffs", function()
+	local primary = CompanionModule.createCompanion("KasugaiCrow", "crow-1", deterministicRandom)
+	for tier = 1, CompanionModule.MAX_TIER - 1 do
+		local material = CompanionModule.createCompanion("KasugaiCrow", "material-" .. tostring(tier), deterministicRandom)
+		material.Tier = primary.Tier
+		local fused = CompanionModule.fuse(primary, material, deterministicRandom)
+		expectEqual(fused, true, "tier " .. tostring(tier) .. " fusion succeeds")
+	end
+	expectEqual(primary.Tier, CompanionModule.MAX_TIER, "maximum tier reached")
+	expectEqual(#primary.Buffs, 5, "maximum random buff count")
+
+	local maxMaterial = CompanionModule.createCompanion("KasugaiCrow", "max-material", deterministicRandom)
+	maxMaterial.Tier = CompanionModule.MAX_TIER
+	local fusedAtMax = CompanionModule.fuse(primary, maxMaterial, deterministicRandom)
+	expectEqual(fusedAtMax, false, "maximum-tier companion cannot fuse again")
+end)
+
+test("companion buff pool exposes every requested bonus category", function()
+	local expected = {
+		HealthPercent = true,
+		DamagePercent = true,
+		MovementSpeed = true,
+		StaminaRegen = true,
+		PVPDamage = true,
+		StaminaPercent = true,
+		DefensePercent = true,
+		MasteryXP = true,
+		LevelXP = true,
+		DropRate = true,
+	}
+	for _, buff in CompanionModule.BUFF_POOL do
+		expected[buff.Key] = nil
+	end
+	expectEqual(next(expected), nil, "all requested companion buffs are configured")
 end)
 
 -- ==================== MusicModule ====================

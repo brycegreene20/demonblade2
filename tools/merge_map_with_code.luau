@@ -17,7 +17,7 @@ local function getUpdateNumber(path: string): number?
 	if lower == "demonblade2.rbxl" then
 		return -1
 	end
-	local n = string.match(lower, "^demonblade2 update%s*(%d+)%.rbxl$")
+	local n = string.match(lower, "^demonblade2 update%s*([%d%.]+)%.rbxl$")
 	return n and tonumber(n) or nil
 end
 

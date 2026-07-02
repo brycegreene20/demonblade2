@@ -80,7 +80,7 @@ local function getRankColor(rank: number): Color3
 	return WHITE
 end
 
-local function CompactRow(Scope: Fusion.Scope<any>, Props: any)
+local function CompactRow(Scope: any, Props: any)
 	Scope = Fusion.innerScope(Scope, Fusion, Util, Components)
 	local Theme = Themer.Theme:now()
 
@@ -208,7 +208,7 @@ local function CompactRow(Scope: Fusion.Scope<any>, Props: any)
 	})
 end
 
-local function TabButton(Scope: Fusion.Scope<any>, Props: any)
+local function TabButton(Scope: any, Props: any)
 	Scope = Fusion.innerScope(Scope, Fusion, Util, Components)
 	local Theme = Themer.Theme:now()
 
@@ -245,7 +245,7 @@ export type Props = {
 	HeadingBanner: { Text: string? }?,
 }
 
-return function(Scope: Fusion.Scope<any>, Props: Props)
+return function(Scope: any, Props: Props)
 	return Themer.Theme:is(GameTheme):during(function()
 		Scope = Fusion.innerScope(Scope, Fusion, Util, Components)
 		local Theme = Themer.Theme:now()

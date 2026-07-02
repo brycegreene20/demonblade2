@@ -59,8 +59,7 @@ function TotalFocusModule.getConstantLabel(rebirthCount: number): string
 end
 
 -- Whether the player has reached V5 and is eligible to rebirth into Constant.
-function TotalFocusModule.canRebirth(xp: number, rebirthCount: number): boolean
-	_ = rebirthCount
+function TotalFocusModule.canRebirth(xp: number, _rebirthCount: number): boolean
 	return TotalFocusModule.getTierIndex(xp) >= TotalFocusModule.MAX_TIER_INDEX
 end
 

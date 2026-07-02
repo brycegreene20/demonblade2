@@ -47,7 +47,7 @@ local function getMarkersFolder()
 	return if markersFolder and markersFolder:IsA("Folder") then markersFolder else nil
 end
 
-local function getMarkerPart(markerName)
+local function _getMarkerPart(markerName)
 	local markersFolder = getMarkersFolder()
 	if not markersFolder then return nil end
 	local marker = markersFolder:FindFirstChild(markerName)

@@ -123,7 +123,10 @@ local function getPivotCF(inst)
 end
 
 local function getBBoxSize(inst)
-	if inst:IsA("Model")    then local _, sz = inst:GetBoundingBox() return sz end
+	if inst:IsA("Model") then
+		local _, sz = inst:GetBoundingBox()
+		return sz
+	end
 	if inst:IsA("BasePart") then return inst.Size end
 	return nil
 end
@@ -144,7 +147,10 @@ local matchSizeState   = nil
 
 local function setSource()
 	local sel = Selection:Get()
-	if #sel == 0 then warn("[ReplaceObjects] Select an object to use as source") return end
+	if #sel == 0 then
+		warn("[ReplaceObjects] Select an object to use as source")
+		return
+	end
 	sourceObj = sel[1]
 	if sourceLbl then
 		sourceLbl.Text       = "✓ " .. sourceObj.Name
@@ -154,7 +160,10 @@ end
 
 local function setTarget()
 	local sel = Selection:Get()
-	if #sel == 0 then warn("[ReplaceObjects] Select an object to use as target") return end
+	if #sel == 0 then
+		warn("[ReplaceObjects] Select an object to use as target")
+		return
+	end
 	targetObj = sel[1]
 	if targetLbl then
 		targetLbl.Text       = "✓ " .. targetObj.Name
@@ -187,9 +196,18 @@ local function replaceOne(src, tgt, matchSize)
 end
 
 local function doReplace()
-	if not sourceObj then warn("[ReplaceObjects] Set a source object first") return end
-	if not targetObj then warn("[ReplaceObjects] Set a target object first") return end
-	if sourceObj == targetObj then warn("[ReplaceObjects] Source and target are the same") return end
+	if not sourceObj then
+		warn("[ReplaceObjects] Set a source object first")
+		return
+	end
+	if not targetObj then
+		warn("[ReplaceObjects] Set a target object first")
+		return
+	end
+	if sourceObj == targetObj then
+		warn("[ReplaceObjects] Source and target are the same")
+		return
+	end
 
 	local matchByName = matchByNameState and matchByNameState.on
 	local matchSize   = matchSizeState   and matchSizeState.on

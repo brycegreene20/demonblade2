@@ -16,6 +16,7 @@ local ItemsModule = require(Modules:WaitForChild("ItemsModule"))
 local BountyModule = require(Modules:WaitForChild("BountyModule"))
 local MasteryModule = require(Modules:WaitForChild("MasteryModule"))
 local RaceModule = require(Modules:WaitForChild("RaceModule"))
+local CompanionModule = require(Modules:WaitForChild("CompanionModule"))
 
 local PlayerDataModule = {}
 
@@ -51,6 +52,8 @@ PlayerDataModule.DEFAULTS = {
 	Bounty = 0,
 	ClanId = "",
 	ClanReputation = 0,
+	Companions = {},
+	EquippedCompanionId = "",
 	Race = RaceModule.DEFAULT_RACE,
 	RaceSpins = RaceModule.STARTING_SPINS,
 	StatPointsMigrated = false,
@@ -73,7 +76,8 @@ local SAVE_FIELDS = {
 	"Level", "XP", "TotalXP",
 	"Damage", "BreathDamage", "DemonArtDamage", "Health", "Defense", "StaminaStat", "MovementSpeed",
 	"StatPoints", "Faction", "Inventory", "RebirthCount", "SkillsUnlocked",
-	"Mastery", "Bounty", "ClanId", "ClanReputation", "Race", "RaceSpins", "StatPointsMigrated", "lastRespecTime",
+	"Mastery", "Bounty", "ClanId", "ClanReputation", "Companions", "EquippedCompanionId",
+	"Race", "RaceSpins", "StatPointsMigrated", "lastRespecTime",
 	"EquippedStyle", "Titles", "EquippedTitle",
 	"TotalFocusXP", "TotalFocusRebirths",
 	"SelflessStateXP", "SelflessDodgePoints",
@@ -230,6 +234,39 @@ local function grantCoreStyleItems(data)
 	end
 end
 
+local function ensureCompanionData(data)
+	if typeof(data.Companions) ~= "table" then
+		data.Companions = {}
+	end
+
+	local normalized = {}
+	for _, companion in data.Companions do
+		local valid = CompanionModule.normalizeCompanion(companion)
+		if valid then
+			table.insert(normalized, valid)
+		end
+	end
+	data.Companions = normalized
+
+	if #data.Companions == 0 then
+		local starter = CompanionModule.createCompanion(
+			CompanionModule.STARTING_SPECIES,
+			"starter-" .. CompanionModule.STARTING_SPECIES
+		)
+		if starter then
+			table.insert(data.Companions, starter)
+			data.EquippedCompanionId = starter.Id
+		end
+	end
+
+	if data.EquippedCompanionId ~= "" then
+		local equipped = CompanionModule.findCompanion(data.Companions, data.EquippedCompanionId)
+		if not equipped then
+			data.EquippedCompanionId = ""
+		end
+	end
+end
+
 local function ensurePlayableIdentity(data)
 	local title = TitleModule.getTitle(data.EquippedTitle or "")
 	if not title then
@@ -240,6 +277,7 @@ local function ensurePlayableIdentity(data)
 	title = applyTitleDerivedFields(data)
 	grantStartingScrollForTitle(data, title)
 	grantCoreStyleItems(data)
+	ensureCompanionData(data)
 	return title ~= nil
 end
 
@@ -255,6 +293,7 @@ function PlayerDataModule.computeStats(data)
 	local staminaRegen = StatConfig.getStaminaRegen(data.StaminaStat)
 	local walkSpeed = math.min(StatConfig.BASE.WalkSpeed + (data.MovementSpeed * 0.5), 40)
 	local defenseMultiplier = math.min(data.Defense * 0.008, 0.64)
+	local companionBonuses = CompanionModule.getBonuses(CompanionModule.getEquippedCompanion(data))
 
 	local equippedScroll = ItemsModule.getScrollByStyle(data.EquippedStyle or "")
 	local styleFaction = equippedScroll and equippedScroll.Faction or data.Faction
@@ -279,7 +318,7 @@ function PlayerDataModule.computeStats(data)
 		end
 	end
 
-	return RaceModule.applyToStats({
+	local stats = RaceModule.applyToStats({
 		maxHP = maxHP,
 		maxStamina = maxStamina,
 		staminaRegen = staminaRegen,
@@ -287,6 +326,13 @@ function PlayerDataModule.computeStats(data)
 		damageMultiplier = damageMultiplier,
 		defenseMultiplier = defenseMultiplier,
 	}, data.Race)
+	stats.maxHP *= 1 + (companionBonuses.HealthPercent or 0)
+	stats.maxStamina *= 1 + (companionBonuses.StaminaPercent or 0)
+	stats.staminaRegen *= 1 + (companionBonuses.StaminaRegen or 0)
+	stats.walkSpeed += companionBonuses.MovementSpeed or 0
+	stats.damageMultiplier *= 1 + (companionBonuses.DamagePercent or 0)
+	stats.defenseMultiplier = math.min(stats.defenseMultiplier + (companionBonuses.DefensePercent or 0), 0.85)
+	return stats
 end
 
 function PlayerDataModule.getDamageMultiplier(player)
@@ -314,6 +360,21 @@ end
 
 function PlayerDataModule.getAbilityCooldownMultiplier(player)
 	return getSelflessNumber(player, "getAbilityCooldownMultiplier", 1)
+end
+
+function PlayerDataModule.getCompanionBonus(player, bonusKey)
+	local data = playerData[player]
+	if not data then return 0 end
+	local bonuses = CompanionModule.getBonuses(CompanionModule.getEquippedCompanion(data))
+	return tonumber(bonuses[bonusKey]) or 0
+end
+
+function PlayerDataModule.getCompanionPVPDamageMultiplier(player)
+	return 1 + PlayerDataModule.getCompanionBonus(player, "PVPDamage")
+end
+
+function PlayerDataModule.getDropRateMultiplier(player)
+	return 1 + PlayerDataModule.getCompanionBonus(player, "DropRate")
 end
 
 function PlayerDataModule.getTechniqueFactionFromData(data)
@@ -404,6 +465,7 @@ function PlayerDataModule.addXP(player, amount)
 
 	amount = math.max(0, tonumber(amount) or 0)
 	amount = math.floor(amount * getClanNumber(player, "getXPBonusMultiplier", 1) + 0.5)
+	amount = math.floor(amount * (1 + PlayerDataModule.getCompanionBonus(player, "LevelXP")) + 0.5)
 	data.XP = data.XP + amount
 	data.TotalXP = data.TotalXP + amount
 
@@ -750,6 +812,61 @@ function PlayerDataModule.hasInventoryItem(player, itemId)
 		if id == itemId then return true end
 	end
 	return false
+end
+
+-- ==================== COMPANIONS ====================
+function PlayerDataModule.getCompanions(player)
+	local data = playerData[player]
+	if not data then return {} end
+	ensureCompanionData(data)
+	return data.Companions
+end
+
+function PlayerDataModule.addCompanion(player, companion)
+	local data = playerData[player]
+	local valid = CompanionModule.normalizeCompanion(companion)
+	if not data or not valid then return false end
+	if CompanionModule.findCompanion(data.Companions, valid.Id) then return false end
+	table.insert(data.Companions, valid)
+	return true
+end
+
+function PlayerDataModule.equipCompanion(player, companionId)
+	local data = playerData[player]
+	if not data then return false, "Player data is not ready" end
+	if companionId == "" then
+		data.EquippedCompanionId = ""
+		PlayerDataModule.applyStatEffects(player)
+		PlayerDataModule.sendStatPointsUpdate(player)
+		return true
+	end
+	if not CompanionModule.findCompanion(data.Companions, companionId) then
+		return false, "Companion is not owned"
+	end
+	data.EquippedCompanionId = companionId
+	PlayerDataModule.applyStatEffects(player)
+	PlayerDataModule.sendStatPointsUpdate(player)
+	return true
+end
+
+function PlayerDataModule.fuseCompanions(player, primaryId, materialId, randomSource)
+	local data = playerData[player]
+	if not data then return false, "Player data is not ready" end
+	local primary = CompanionModule.findCompanion(data.Companions, primaryId)
+	local material, materialIndex = CompanionModule.findCompanion(data.Companions, materialId)
+	if not primary or not material or not materialIndex then
+		return false, "Companion is not owned"
+	end
+	local fused, result = CompanionModule.fuse(primary, material, randomSource)
+	if not fused then return false, result end
+
+	table.remove(data.Companions, materialIndex)
+	if data.EquippedCompanionId == materialId then
+		data.EquippedCompanionId = primaryId
+	end
+	PlayerDataModule.applyStatEffects(player)
+	PlayerDataModule.sendStatPointsUpdate(player)
+	return true, result
 end
 
 function PlayerDataModule.getSavePayload(player)
@@ -1123,6 +1240,8 @@ function PlayerDataModule.addMasteryXP(player, styleId, amount)
 
 	local mastery = data.Mastery[styleId]
 	mastery.RebirthCount = mastery.RebirthCount or 0
+	amount = math.max(0, tonumber(amount) or 0)
+	amount = math.floor(amount * (1 + PlayerDataModule.getCompanionBonus(player, "MasteryXP")) + 0.5)
 	mastery.XP = mastery.XP + amount
 	mastery.TotalXP = mastery.TotalXP + amount
 	local maxLevel = MasteryModule.getMaxLevel(mastery.RebirthCount)
@@ -1276,7 +1395,8 @@ end
 
 function PlayerDataModule.getPvPDamageMultiplier(player)
 	local data = playerData[player]
-	return BountyModule.getPvPDamageMultiplier(data and data.Bounty or 0)
+	local bountyMultiplier = BountyModule.getPvPDamageMultiplier(data and data.Bounty or 0)
+	return bountyMultiplier * PlayerDataModule.getCompanionPVPDamageMultiplier(player)
 end
 
 function PlayerDataModule.applyPvpBountyTransfer(killer, defeated)

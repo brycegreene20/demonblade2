@@ -91,7 +91,7 @@ local function getGroundedSafeSpawnCFrame(character: Model): CFrame
 
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
-	local excluded = { character }
+	local excluded: { Instance } = { character }
 	local markersFolder = workspace:FindFirstChild(MARKERS_FOLDER_NAME)
 	if markersFolder then
 		table.insert(excluded, markersFolder)

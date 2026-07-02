@@ -109,11 +109,21 @@ end
 local function colorizeWater(instance: Instance, primary: Color3, secondary: Color3?)
 	local bright = secondary or WATER_C2
 	for _, desc in instance:GetDescendants() do
-		if desc:IsA("ParticleEmitter") or desc:IsA("Trail") or desc:IsA("Beam") then
+		if desc:IsA("ParticleEmitter") then
 			desc.Color = ColorSequence.new(primary, bright)
-		elseif desc:IsA("Decal") or desc:IsA("Texture") then
+		elseif desc:IsA("Trail") then
+			desc.Color = ColorSequence.new(primary, bright)
+		elseif desc:IsA("Beam") then
+			desc.Color = ColorSequence.new(primary, bright)
+		elseif desc:IsA("Decal") then
 			desc.Color3 = primary:Lerp(bright, 0.35)
-		elseif desc:IsA("PointLight") or desc:IsA("SpotLight") or desc:IsA("SurfaceLight") then
+		elseif desc:IsA("Texture") then
+			desc.Color3 = primary:Lerp(bright, 0.35)
+		elseif desc:IsA("PointLight") then
+			desc.Color = bright
+		elseif desc:IsA("SpotLight") then
+			desc.Color = bright
+		elseif desc:IsA("SurfaceLight") then
 			desc.Color = bright
 		end
 	end
@@ -532,9 +542,8 @@ local function vfxWaterDragon(hrp: BasePart, skill)
 
 	-- Dragon model surges through the air
 	local dragonSource = findVFXTemplate("DemonSlayerKit", "Constant flux's dragon")
-	local dragon: Model? = nil
 	if dragonSource and dragonSource:IsA("Model") then
-		dragon = dragonSource:Clone()
+		local dragon = dragonSource:Clone()
 		prepareWorldVFX(dragon, CFrame.lookAt(origin, origin + forward))
 		for _, desc in dragon:GetDescendants() do
 			if desc:IsA("BasePart") then

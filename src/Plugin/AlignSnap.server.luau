@@ -140,7 +140,10 @@ end
 -- ── Align ─────────────────────────────────────────────────────────────────────
 local function alignAxis(ax, side)
 	local sel = Selection:Get()
-	if #sel < 2 then warn("[AlignSnap] Select 2 or more instances") return end
+	if #sel < 2 then
+		warn("[AlignSnap] Select 2 or more instances")
+		return
+	end
 
 	local target, count = nil, 0
 	for _, inst in sel do
@@ -175,7 +178,10 @@ end
 -- ── Distribute ────────────────────────────────────────────────────────────────
 local function distribute(ax)
 	local sel = Selection:Get()
-	if #sel < 3 then warn("[AlignSnap] Select 3 or more instances") return end
+	if #sel < 3 then
+		warn("[AlignSnap] Select 3 or more instances")
+		return
+	end
 
 	local items = {}
 	for _, inst in sel do
@@ -198,7 +204,10 @@ end
 -- ── Snap to grid ──────────────────────────────────────────────────────────────
 local function snapToGrid(gridSize)
 	local sel = Selection:Get()
-	if #sel == 0 then warn("[AlignSnap] Nothing selected") return end
+	if #sel == 0 then
+		warn("[AlignSnap] Nothing selected")
+		return
+	end
 	local function snap(v) return math.round(v / gridSize) * gridSize end
 	ChangeHistoryService:SetWaypoint("Before Grid Snap")
 	for _, inst in sel do
@@ -217,7 +226,10 @@ local templateLabel = nil
 
 local function setTemplate()
 	local sel = Selection:Get()
-	if #sel == 0 then warn("[AlignSnap] Select a tile to use as template") return end
+	if #sel == 0 then
+		warn("[AlignSnap] Select a tile to use as template")
+		return
+	end
 	floorTemplate = sel[1]
 	if templateLabel then
 		templateLabel.Text       = "✓ " .. floorTemplate.Name
@@ -234,7 +246,10 @@ local function fillFloor(cntXBox, cntZBox)
 	local cz = math.max(1, math.floor(tonumber(cntZBox.Text) or 5))
 
 	local cf, sz = getBBox(floorTemplate)
-	if not cf then warn("[AlignSnap] Could not read template bounding box") return end
+	if not cf then
+		warn("[AlignSnap] Could not read template bounding box")
+		return
+	end
 
 	local origin = cf.Position
 
@@ -295,7 +310,10 @@ rowLabel("Grid :", 8, 42)
 local gridBox = makeBox(54, 58, "studs", "4")
 makeBtn("Snap Selected", 116, 108, Color3.fromRGB(160, 90, 20), function()
 	local g = tonumber(gridBox.Text)
-	if not g or g <= 0 then warn("[AlignSnap] Enter a positive grid size") return end
+	if not g or g <= 0 then
+		warn("[AlignSnap] Enter a positive grid size")
+		return
+	end
 	snapToGrid(g)
 end)
 nextRow()

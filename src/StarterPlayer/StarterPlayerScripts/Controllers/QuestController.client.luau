@@ -131,7 +131,7 @@ questListLayout.Parent = questListFrame
 
 local dialogOpen = false
 local dialogTargetWidth = 420
-local __currentNpcId = nil
+local _currentNpcId = nil
 
 local function createQuestCard(questInfo, layoutOrder)
 	local statusColor = QUEST_LOCKED
