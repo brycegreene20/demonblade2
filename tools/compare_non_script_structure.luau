@@ -14,7 +14,7 @@ local function getPlaceUpdateNumber(path: string): number?
 		return -1
 	end
 
-	local update = string.match(lowerPath, "^demonblade2 update%s*(%d+)%.rbxl$")
+	local update = string.match(lowerPath, "^demonblade2 update%s*([%d%.]+)%.rbxl$")
 	return update and tonumber(update) or nil
 end
 
