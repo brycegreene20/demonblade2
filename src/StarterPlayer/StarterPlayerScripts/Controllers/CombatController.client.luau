@@ -255,6 +255,7 @@ local SLOT_KEYS = {
 	[Enum.KeyCode.F] = "F",
 	[Enum.KeyCode.V] = "V",
 	[Enum.KeyCode.Y] = "Y",
+	[Enum.KeyCode.T] = "T",
 	[Enum.KeyCode.ButtonR1] = "Q",
 	[Enum.KeyCode.ButtonR2] = "E",
 	[Enum.KeyCode.ButtonL2] = "R",
@@ -288,11 +289,16 @@ local SKILL_VFX_COLORS = {
 	MoonClaw = Color3.fromRGB(190, 50, 210),
 	BloodTemari = Color3.fromRGB(200, 40, 90),
 	TemariFullMoon = Color3.fromRGB(230, 160, 255),
+	-- Flight
+	WaterFlight       = Color3.fromRGB(70,  210, 255),
+	FlameFlight       = Color3.fromRGB(255, 130, 30),
+	DemonFlight       = Color3.fromRGB(120, 0,   185),
+	TemariFlightSkill = Color3.fromRGB(210, 90,  230),
 }
 
 local function buildSkillSlots(faction)
 	skillSlots = {}
-	for _, slot in {"Q", "E", "R", "F", "V", "Y"} do
+	for _, slot in {"Q", "E", "R", "F", "V", "Y", "T"} do
 		local skill = SkillSystemModule.getSkillForSlot(faction, slot)
 		if skill then
 			local mastery = _clientMastery[skill.Style or ""]
@@ -349,12 +355,12 @@ skillBarGui.IgnoreGuiInset = true
 skillBarGui.DisplayOrder = 6
 skillBarGui.Parent = PlayerGui
 
-local SLOT_ORDER = { Q = 1, E = 2, R = 3, F = 4, Y = 5, V = 6 }
+local SLOT_ORDER = { Q = 1, E = 2, R = 3, F = 4, Y = 5, V = 6, T = 7 }
 local ULTIMATE_SLOT = "V"
 
 local skillBarContainer = Instance.new("Frame")
 skillBarContainer.Name = "SkillBar"
-skillBarContainer.Size = UDim2.fromOffset(440, 74)
+skillBarContainer.Size = UDim2.fromOffset(520, 74)
 skillBarContainer.Position = UDim2.new(0.5, 0, 1, -30)
 skillBarContainer.AnchorPoint = Vector2.new(0.5, 1)
 skillBarContainer.BackgroundTransparency = 1
@@ -513,7 +519,7 @@ local function createSkillSlotUI(slotKey)
 	}
 end
 
-for _, slot in {"Q", "E", "R", "F", "Y", "V"} do
+for _, slot in {"Q", "E", "R", "F", "Y", "V", "T"} do
 	skillSlotFrames[slot] = createSkillSlotUI(slot)
 end
 
@@ -589,6 +595,7 @@ local SLOT_ICONS = {
 	F = "⚔️",
 	V = "⭐",
 	Y = "🐉",
+	T = "✦",
 }
 
 updateSkillBarUI = function()
@@ -2447,6 +2454,13 @@ local function skillCameraShake()
 end
 
 useSkill = function(slot)
+	-- Flight toggle: if already airborne, land without a server round-trip
+	-- selene: allow(global_usage)
+	if slot == "T" and _G.FlightController and _G.FlightController.isFlying then
+		_G.FlightController.stop()
+		return
+	end
+
 	if isUsingSkill or isAttacking or isBlocking then return end
 
 	local skill = skillSlots[slot]

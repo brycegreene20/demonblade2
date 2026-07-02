@@ -1032,6 +1032,40 @@ local function vfxTemariFullMoon(hrp: BasePart, _skill)
 	playSound(hrp, "TemariDemonArts", 0.8, 0.85)
 end
 
+-- ── Flight VFX (takeoff burst per style) ──────────────────────────────────────
+
+local function vfxWaterFlight(hrp: BasePart, _skill)
+	spawnAura(hrp, WATER_C1, 1.2, 5)
+	spawnGroundRing(hrp.Position, WATER_C1, 7, 0.5)
+	spawnAuthoredBurst("AnimeParticles", "Water-01", CFrame.new(hrp.Position + Vector3.new(0, 1, 0)), 20, 0.8, WATER_C1, WATER_C2)
+	spawnShockwave(hrp.Position, WATER_C2, 0.9, 0)
+	playSound(hrp, "WaterBreathing", 0.55, 1.1)
+end
+
+local function vfxFlameFlight(hrp: BasePart, _skill)
+	spawnAura(hrp, FLAME_C1, 1.2, 5)
+	spawnGroundRing(hrp.Position, FLAME_C1, 7, 0.5)
+	spawnAuthoredBurst("AnimeParticles", "Punch-03", CFrame.new(hrp.Position + Vector3.new(0, 1, 0)), 20, 0.8, FLAME_C1, FLAME_C2)
+	spawnShockwave(hrp.Position, FLAME_C2, 0.9, 0)
+	playSound(hrp, "FlameBreathing", 0.6, 1.0)
+end
+
+local function vfxDemonFlight(hrp: BasePart, _skill)
+	spawnAura(hrp, DEMON_C2, 1.2, 5)
+	spawnGroundRing(hrp.Position, DEMON_C1, 7, 0.5)
+	spawnAuthoredBurst("DemonSlayerKit", "Evil twirl", CFrame.new(hrp.Position + Vector3.new(0, 1, 0)), 18, 0.8, DEMON_C1, DEMON_C2)
+	spawnShockwave(hrp.Position, DEMON_C2, 0.9, 0)
+	playSound(hrp, "DemonArts", 0.55, 0.9)
+end
+
+local function vfxTemariFlightSkill(hrp: BasePart, _skill)
+	spawnAura(hrp, TEMARI_C1, 1.2, 5)
+	spawnGroundRing(hrp.Position, TEMARI_C2, 7, 0.5)
+	spawnAuthoredBurst("AnimeParticles", "Stars-01", CFrame.new(hrp.Position + Vector3.new(0, 1, 0)), 18, 0.8, TEMARI_C1, TEMARI_C2)
+	spawnShockwave(hrp.Position, TEMARI_C1, 0.9, 0)
+	playSound(hrp, "TemariDemonArts", 0.55, 1.05)
+end
+
 -- ── Dispatch table ─────────────────────────────────────────────────────────────
 
 type VFXHandler = (hrp: BasePart, skill: any) -> ()
@@ -1065,6 +1099,11 @@ local SKILL_HANDLERS: { [string]: VFXHandler } = {
 	MoonClaw          = vfxMoonClaw,
 	BloodTemari       = vfxBloodTemari,
 	TemariFullMoon    = vfxTemariFullMoon,
+	-- Flight
+	WaterFlight       = vfxWaterFlight,
+	FlameFlight       = vfxFlameFlight,
+	DemonFlight       = vfxDemonFlight,
+	TemariFlightSkill = vfxTemariFlightSkill,
 }
 
 local STYLE_FALLBACK_COLOR: { [string]: Color3 } = {

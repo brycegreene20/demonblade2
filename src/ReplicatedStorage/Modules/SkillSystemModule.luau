@@ -53,6 +53,7 @@ local MASTERY_UNLOCK_LEVEL_BY_SLOT = {
 	Q = 1,
 	E = 2,
 	R = 4,
+	T = 5,
 	F = 7,
 	Y = 10,
 	V = 15,
@@ -79,6 +80,7 @@ function SkillSystemModule.registerSkill(skillId, config)
 		MasteryLevelRequired = config.MasteryLevelRequired or MASTERY_UNLOCK_LEVEL_BY_SLOT[config.Slot or "Q"] or 1,
 		VFXProfile = config.VFXProfile or "",
 		VFXAssets = config.VFXAssets or {},
+		IsUtility = config.IsUtility == true,
 	}
 end
 
@@ -481,6 +483,87 @@ SkillSystemModule.registerSkill("TemariFullMoon", {
 	MultiHitDelay = 0.12,
 	Description = "Manifest six demonic arms, each hurling a temari ball simultaneously — an inescapable annihilation.",
 	LevelRequired = 1,
+})
+
+-- ==================== FLIGHT (all styles) ====================
+SkillSystemModule.registerSkill("WaterFlight", {
+	Name = "Sky Current",
+	Faction = "Slayer",
+	Style = "WaterBreathing",
+	Slot = "T",
+	Icon = "🌊",
+	BaseDamage = 0,
+	StaminaCost = 40,
+	Cooldown = 30,
+	HitboxSize = Vector3.new(0, 0, 0),
+	HitboxOffset = 0,
+	MultiHit = 0,
+	Description = "Ride a surging water current into the sky. Press T again to land.",
+	LevelRequired = 1,
+	MasteryLevelRequired = 5,
+	VFXProfile = "WaterFlight",
+	VFXAssets = {},
+	IsUtility = true,
+})
+
+SkillSystemModule.registerSkill("FlameFlight", {
+	Name = "Prominence Ascent",
+	Faction = "Slayer",
+	Style = "FlameBreathing",
+	Slot = "T",
+	Icon = "🔥",
+	BaseDamage = 0,
+	StaminaCost = 40,
+	Cooldown = 30,
+	HitboxSize = Vector3.new(0, 0, 0),
+	HitboxOffset = 0,
+	MultiHit = 0,
+	Description = "Launch skyward on a pillar of flame. Press T again to land.",
+	LevelRequired = 1,
+	MasteryLevelRequired = 5,
+	VFXProfile = "FlameFlight",
+	VFXAssets = {},
+	IsUtility = true,
+})
+
+SkillSystemModule.registerSkill("DemonFlight", {
+	Name = "Shadow Glide",
+	Faction = "Demon",
+	Style = "DemonArts",
+	Slot = "T",
+	Icon = "🌑",
+	BaseDamage = 0,
+	StaminaCost = 40,
+	Cooldown = 30,
+	HitboxSize = Vector3.new(0, 0, 0),
+	HitboxOffset = 0,
+	MultiHit = 0,
+	Description = "Dissolve into shadow and drift freely through the air. Press T again to land.",
+	LevelRequired = 1,
+	MasteryLevelRequired = 5,
+	VFXProfile = "DemonFlight",
+	VFXAssets = {},
+	IsUtility = true,
+})
+
+SkillSystemModule.registerSkill("TemariFlightSkill", {
+	Name = "Temari Sky Dance",
+	Faction = "Demon",
+	Style = "TemariDemonArts",
+	Slot = "T",
+	Icon = "🌙",
+	BaseDamage = 0,
+	StaminaCost = 40,
+	Cooldown = 30,
+	HitboxSize = Vector3.new(0, 0, 0),
+	HitboxOffset = 0,
+	MultiHit = 0,
+	Description = "Bounce skyward on orbiting temari balls. Press T again to land.",
+	LevelRequired = 1,
+	MasteryLevelRequired = 5,
+	VFXProfile = "TemariFlightSkill",
+	VFXAssets = {},
+	IsUtility = true,
 })
 
 function SkillSystemModule.getSkill(skillId)

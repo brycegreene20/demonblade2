@@ -160,20 +160,22 @@ UseSkillRemote.OnServerEvent:Connect(function(player, skillId)
 		end
 	end
 
-	if skill.MultiHit > 1 then
-		task.spawn(function()
-			for i = 1, skill.MultiHit do
-				if not player.Character then break end
-				local hum = player.Character:FindFirstChildOfClass("Humanoid")
-				if not hum or hum.Health <= 0 then break end
-				applySkillDamage(player, skill, i)
-				if i < skill.MultiHit then
-					task.wait(skill.MultiHitDelay)
+	if not skill.IsUtility then
+		if skill.MultiHit > 1 then
+			task.spawn(function()
+				for i = 1, skill.MultiHit do
+					if not player.Character then break end
+					local hum = player.Character:FindFirstChildOfClass("Humanoid")
+					if not hum or hum.Health <= 0 then break end
+					applySkillDamage(player, skill, i)
+					if i < skill.MultiHit then
+						task.wait(skill.MultiHitDelay)
+					end
 				end
-			end
-		end)
-	else
-		applySkillDamage(player, skill, 1)
+			end)
+		else
+			applySkillDamage(player, skill, 1)
+		end
 	end
 end)
 
